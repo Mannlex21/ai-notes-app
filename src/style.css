@@ -1,31 +1,43 @@
 @import "tailwindcss";
 
 @theme {
-	--color-dark-bg: #09090b;
-	--color-dark-card: #18181b;
-	--color-dark-border: #27272a;
-	--color-dark-hover: #27272a;
-	--color-dark-subtext: #a1a1aa;
+	--color-paper-bg: #f7f4ea;
+	--color-paper-card: #f2eee3;
+	--color-paper-border: #d8d3c5;
+	--color-paper-line: #c8c2b3;
+	--color-paper-text: #3d3b37;
+	--color-paper-subtext: #8c867a;
+	--color-paper-accent: #e06c53;
 
 	--font-sans: "Inter", system-ui, sans-serif;
-	--font-mono: "JetBrains Mono", "Fira Code", monospace;
 }
 
+:root {
+	color-scheme: light;
+}
+
+html,
 body {
-	background-color: var(--color-dark-bg);
-	color: #f4f4f5;
+	background-color: #f7f4ea !important;
+	color: #3d3b37 !important;
 	font-family: var(--font-sans);
 	min-height: 100vh;
+	margin: 0;
 }
 
-/* Scrollbar minimalista */
+/* Subrayado elegante estilo cuaderno */
+.paper-line {
+	border-bottom: 1px solid #d8d3c5;
+}
+
+/* Scrollbar sutil beige */
 ::-webkit-scrollbar {
 	width: 6px;
 }
 ::-webkit-scrollbar-track {
-	background: #09090b;
+	background: #f7f4ea;
 }
 ::-webkit-scrollbar-thumb {
-	background: #27272a;
+	background: #d8d3c5;
 	border-radius: 3px;
 }
