@@ -2,33 +2,21 @@ import { ref } from "vue";
 import { defineStore } from "pinia";
 import { sql } from "../lib/neon";
 import { useAuthStore } from "./useAuthStore";
-
-export interface Note {
-	id: string;
-	user_id: string;
-	title: string;
-	content: string;
-	summary?: string;
-	tags: string[];
-	color: string;
-	is_pinned: boolean;
-	is_archived: boolean;
-	created_at: string;
-	updated_at: string;
-}
+import { ai, GEMINI_MODEL, EMBEDDING_MODEL } from "../lib/gemini";
+import type { Note } from "../types";
 
 export const useNotesStore = defineStore("notes", () => {
 	const notes = ref<Note[]>([]);
 	const archivedNotes = ref<Note[]>([]);
 	const loading = ref(false);
+	const aiLoading = ref(false);
 	const error = ref<string | null>(null);
 
 	const authStore = useAuthStore();
-
 	const getUserId = () => authStore.user?.id;
 
 	// ----------------------------------------------------
-	// 1. READ: Cargar Notas Activas y Archivadas
+	// OPERACIONES CRUD EXISTENTES
 	// ----------------------------------------------------
 	const fetchNotes = async () => {
 		const userId = getUserId();
@@ -39,18 +27,7 @@ export const useNotesStore = defineStore("notes", () => {
 
 		try {
 			const rows = await sql`
-				SELECT 
-					id, 
-					user_id,
-					title, 
-					content, 
-					summary, 
-					tags, 
-					color,
-					is_pinned, 
-					is_archived,
-					created_at,
-					updated_at
+				SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at
 				FROM notes
 				WHERE user_id = ${userId}
 				ORDER BY is_pinned DESC, created_at DESC;
@@ -72,9 +49,6 @@ export const useNotesStore = defineStore("notes", () => {
 		}
 	};
 
-	// ----------------------------------------------------
-	// 2. CREATE: Agregar Nueva Nota
-	// ----------------------------------------------------
 	const addNote = async (payload: {
 		title: string;
 		content: string;
@@ -87,13 +61,7 @@ export const useNotesStore = defineStore("notes", () => {
 		try {
 			const [inserted] = await sql`
 				INSERT INTO notes (user_id, title, content, is_pinned, color)
-				VALUES (
-					${userId}, 
-					${payload.title || ""}, 
-					${payload.content || ""}, 
-					${payload.is_pinned || false},
-					${payload.color || "#f7f4ea"}
-				)
+				VALUES (${userId}, ${payload.title || ""}, ${payload.content || ""}, ${payload.is_pinned || false}, ${payload.color || "#f7f4ea"})
 				RETURNING id, created_at, updated_at;
 			`;
 
@@ -117,9 +85,6 @@ export const useNotesStore = defineStore("notes", () => {
 		}
 	};
 
-	// ----------------------------------------------------
-	// 3. UPDATE: Actualizar Título y Contenido
-	// ----------------------------------------------------
 	const updateNote = async (
 		id: string,
 		payload: { title: string; content: string; color?: string },
@@ -130,18 +95,13 @@ export const useNotesStore = defineStore("notes", () => {
 		try {
 			await sql`
 				UPDATE notes
-				SET 
-					title = ${payload.title}, 
-					content = ${payload.content}, 
-					color = ${payload.color || "#f7f4ea"},
-					updated_at = NOW()
+				SET title = ${payload.title}, content = ${payload.content}, color = ${payload.color || "#f7f4ea"}, updated_at = NOW()
 				WHERE id = ${id} AND user_id = ${userId};
 			`;
 
 			const note =
 				notes.value.find((n) => n.id === id) ||
 				archivedNotes.value.find((n) => n.id === id);
-
 			if (note) {
 				note.title = payload.title;
 				note.content = payload.content;
@@ -154,9 +114,6 @@ export const useNotesStore = defineStore("notes", () => {
 		}
 	};
 
-	// ----------------------------------------------------
-	// 4. UPDATE TOGGLES: Fijar / Desfijar Nota
-	// ----------------------------------------------------
 	const togglePin = async (id: string) => {
 		const userId = getUserId();
 		if (!userId) return;
@@ -174,19 +131,15 @@ export const useNotesStore = defineStore("notes", () => {
 			);
 
 			await sql`
-				UPDATE notes 
-				SET is_pinned = ${newState}, updated_at = NOW()
+				UPDATE notes SET is_pinned = ${newState}, updated_at = NOW()
 				WHERE id = ${id} AND user_id = ${userId};
 			`;
 		} catch (err) {
-			console.error("Error al cambiar pin de la nota:", err);
+			console.error("Error al cambiar pin:", err);
 			note.is_pinned = previousState;
 		}
 	};
 
-	// ----------------------------------------------------
-	// 5. UPDATE TOGGLES: Archivar / Desarchivar
-	// ----------------------------------------------------
 	const toggleArchiveNote = async (id: string) => {
 		const userId = getUserId();
 		if (!userId) return;
@@ -202,8 +155,7 @@ export const useNotesStore = defineStore("notes", () => {
 				archivedNotes.value.unshift(archivedNote);
 
 				await sql`
-					UPDATE notes 
-					SET is_archived = TRUE, is_pinned = FALSE, updated_at = NOW()
+					UPDATE notes SET is_archived = TRUE, is_pinned = FALSE, updated_at = NOW()
 					WHERE id = ${id} AND user_id = ${userId};
 				`;
 			} else {
@@ -219,24 +171,43 @@ export const useNotesStore = defineStore("notes", () => {
 					notes.value.unshift(restoredNote);
 
 					await sql`
-						UPDATE notes 
-						SET is_archived = FALSE, updated_at = NOW()
+						UPDATE notes SET is_archived = FALSE, updated_at = NOW()
 						WHERE id = ${id} AND user_id = ${userId};
 					`;
 				}
 			}
 		} catch (err) {
-			console.error("Error al archivar/desarchivar nota:", err);
+			console.error("Error al archivar/desarchivar:", err);
+			await fetchNotes();
+		}
+	};
+
+	const deleteNote = async (id: string) => {
+		const userId = getUserId();
+		if (!userId) return;
+
+		try {
+			notes.value = notes.value.filter((n) => n.id !== id);
+			archivedNotes.value = archivedNotes.value.filter(
+				(n) => n.id !== id,
+			);
+
+			await sql`DELETE FROM notes WHERE id = ${id} AND user_id = ${userId};`;
+		} catch (err) {
+			console.error("Error al eliminar nota:", err);
+			error.value = "No se pudo eliminar la nota.";
 			await fetchNotes();
 		}
 	};
 
 	// ----------------------------------------------------
-	// 6. UPDATE IA: Guardar Resumen o Etiquetas
+	// FUNCIONALIDADES DE IA (BAJO DEMANDA)
 	// ----------------------------------------------------
+
+	// Helper para persistir cambios de IA en Neon
 	const saveNoteAiData = async (
 		id: string,
-		data: { summary?: string; tags?: string[] },
+		data: { summary?: string; tags?: string[]; color?: string },
 	) => {
 		const userId = getUserId();
 		if (!userId) return;
@@ -249,12 +220,14 @@ export const useNotesStore = defineStore("notes", () => {
 
 			if (data.summary !== undefined) note.summary = data.summary;
 			if (data.tags !== undefined) note.tags = data.tags;
+			if (data.color !== undefined) note.color = data.color;
 
 			await sql`
 				UPDATE notes
 				SET 
 					summary = ${data.summary ?? note.summary ?? null},
 					tags = ${data.tags ?? note.tags ?? []},
+					color = ${data.color ?? note.color ?? "#f7f4ea"},
 					updated_at = NOW()
 				WHERE id = ${id} AND user_id = ${userId};
 			`;
@@ -263,27 +236,183 @@ export const useNotesStore = defineStore("notes", () => {
 		}
 	};
 
-	// ----------------------------------------------------
-	// 7. DELETE: Eliminar Nota Definitivamente
-	// ----------------------------------------------------
-	const deleteNote = async (id: string) => {
-		const userId = getUserId();
-		if (!userId) return;
+	// FEAT 1: Resumen Automático (3 viñetas)
+	const summarizeNote = async (id: string) => {
+		const note = notes.value.find((n) => n.id === id);
+		if (!note || !note.content) return;
 
+		aiLoading.value = true;
 		try {
-			notes.value = notes.value.filter((n) => n.id !== id);
-			archivedNotes.value = archivedNotes.value.filter(
-				(n) => n.id !== id,
-			);
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: `Condensa el siguiente texto en exactamente 3 puntos clave muy breves (usa formato de viñetas '- '):\n\n${note.content}`,
+			});
 
-			await sql`
-				DELETE FROM notes 
-				WHERE id = ${id} AND user_id = ${userId};
-			`;
+			const summary = response.text?.trim();
+			if (summary) {
+				await saveNoteAiData(id, { summary });
+			}
 		} catch (err) {
-			console.error("Error al eliminar nota:", err);
-			error.value = "No se pudo eliminar la nota.";
+			console.error("Error al resumir nota:", err);
+		} finally {
+			aiLoading.value = false;
+		}
+	};
+
+	// FEAT 2: Autocategorización y Etiquetas (JSON estructurado)
+	const autoTagNote = async (id: string) => {
+		const note = notes.value.find((n) => n.id === id);
+		if (!note || !note.content) return;
+
+		aiLoading.value = true;
+		try {
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: `Analiza el contenido de esta nota y devuelve de 1 a 3 etiquetas cortas en español y un color cálido pastel sugerido para papel en formato HEX (ej: #f7f4ea, #f2eee3, #eaf2e8).\n\nTexto: "${note.content}"`,
+				config: {
+					responseMimeType: "application/json",
+					responseSchema: {
+						type: "object",
+						properties: {
+							tags: {
+								type: "array",
+								items: { type: "string" },
+							},
+							color: { type: "string" },
+						},
+						required: ["tags", "color"],
+					},
+				},
+			});
+
+			const data = JSON.parse(response.text || "{}");
+			if (data.tags && Array.isArray(data.tags)) {
+				await saveNoteAiData(id, {
+					tags: data.tags,
+					color: data.color,
+				});
+			}
+		} catch (err) {
+			console.error("Error en auto-tagging:", err);
+		} finally {
+			aiLoading.value = false;
+		}
+	};
+
+	// FEAT 3: Generación / Expansión de Texto (para NoteInput)
+	async function expandText(promptText: string): Promise<string> {
+		aiLoading.value = true;
+		try {
+			const response = await fetch("/api/ai/expand", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: promptText }),
+			});
+
+			const data = await response.json();
+			const generatedText =
+				data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+			// Si la respuesta no incluye el prompt original al inicio, los unimos
+			if (!generatedText.startsWith(promptText)) {
+				return `${promptText}${generatedText}`;
+			}
+
+			return generatedText;
+		} catch (error) {
+			console.error("Error al expandir borrador:", error);
+			return promptText;
+		} finally {
+			aiLoading.value = false;
+		}
+	}
+
+	// FEAT 4: Mejora de Estilo y Gramática (Genera variantes para el Modal)
+	const refineStyleOptions = async (
+		currentText: string,
+		tone: "formal" | "conciso" | "casual",
+	): Promise<string[]> => {
+		if (!currentText.trim()) return [];
+
+		const tonePrompts = {
+			formal: "Reescribe el texto corrigiendo la gramática y adaptándolo a un tono profesional, claro y pulido.",
+			conciso:
+				"Resume y simplifica el texto manteniendo únicamente la información imprescindible.",
+			casual: "Reescribe el texto para que suene natural, fresco y conversacional.",
+		};
+
+		aiLoading.value = true;
+		try {
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: `Instrucción: Genera 3 variantes distintas reescritas según el tono solicitado.\n\nObjetivo: ${tonePrompts[tone]}\n\nTexto original:\n"${currentText}"`,
+				config: {
+					responseMimeType: "application/json",
+					responseSchema: {
+						type: "object",
+						properties: {
+							options: {
+								type: "array",
+								items: { type: "string" },
+								description:
+									"Exactamente 3 variantes reescritas sin comentarios ni explicaciones adicionales.",
+							},
+						},
+						required: ["options"],
+					},
+				},
+			});
+
+			const data = JSON.parse(response.text || "{}");
+			return data.options || [currentText];
+		} catch (err) {
+			console.error("Error al generar opciones de estilo:", err);
+			return [];
+		} finally {
+			aiLoading.value = false;
+		}
+	};
+
+	// FEAT 5: Smart Search / RAG (Búsqueda Semántica con Embeddings)
+	const searchNotesSemantics = async (query: string) => {
+		if (!query.trim()) return await fetchNotes();
+
+		loading.value = true;
+		try {
+			const embeddingRes = await ai.models.embedContent({
+				model: EMBEDDING_MODEL,
+				contents: query,
+			});
+
+			// Cambiar embeddingRes.embedding.values por embeddingRes.embeddings[0].values
+			const values = embeddingRes.embeddings?.[0]?.values;
+			if (!values) return;
+
+			const queryVector = `[${values.join(",")}]`;
+
+			const rows = await sql`
+      SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at,
+             1 - (embedding <=> ${queryVector}::vector) AS similarity
+      FROM notes
+      WHERE user_id = ${getUserId()}
+        AND embedding IS NOT NULL
+        AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
+      ORDER BY similarity DESC
+      LIMIT 10;
+    `;
+
+			const formattedRows: Note[] = rows.map((n: any) => ({
+				...n,
+				tags: n.tags || [],
+				color: n.color || "#f7f4ea",
+			}));
+
+			notes.value = formattedRows.filter((n) => !n.is_archived);
+		} catch (err) {
+			console.error("Error en búsqueda semántica:", err);
 			await fetchNotes();
+		} finally {
+			loading.value = false;
 		}
 	};
 
@@ -291,13 +420,18 @@ export const useNotesStore = defineStore("notes", () => {
 		notes,
 		archivedNotes,
 		loading,
+		aiLoading,
 		error,
 		fetchNotes,
 		addNote,
 		updateNote,
 		togglePin,
 		toggleArchiveNote,
-		saveNoteAiData,
 		deleteNote,
+		summarizeNote,
+		autoTagNote,
+		expandText,
+		refineStyleOptions,
+		searchNotesSemantics,
 	};
 });
