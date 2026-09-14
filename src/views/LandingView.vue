@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import { Sparkles, Shield, Zap, ArrowRight, CheckCircle2 } from 'lucide-vue-next'
+import { Sparkles, ArrowRight } from 'lucide-vue-next'
 </script>
 
 <template>

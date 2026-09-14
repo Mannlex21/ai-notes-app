@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, User as UserIcon, Sparkles } from 'lucide-vue-next'
+import { Settings, LogOut, Sparkles } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/useAuthStore'
 
 const router = useRouter()

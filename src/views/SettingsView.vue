@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { sql } from '../lib/neon'
-import { User, Sliders, Sparkles, Check, Save } from 'lucide-vue-next'
+import { User, Sparkles, Check, Save } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/useAuthStore'
 
 const authStore = useAuthStore()
