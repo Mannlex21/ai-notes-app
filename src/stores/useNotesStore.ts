@@ -52,26 +52,37 @@ export const useNotesStore = defineStore("notes", () => {
 	const addNote = async (payload: {
 		title: string;
 		content: string;
-		is_pinned?: boolean;
+		tags?: string[];
 		color?: string;
+		is_pinned?: boolean;
 	}) => {
 		const userId = getUserId();
 		if (!userId) return;
 
+		const noteTags = payload.tags || [];
+		const noteColor = payload.color || "#f7f4ea";
+
 		try {
 			const [inserted] = await sql`
-				INSERT INTO notes (user_id, title, content, is_pinned, color)
-				VALUES (${userId}, ${payload.title || ""}, ${payload.content || ""}, ${payload.is_pinned || false}, ${payload.color || "#f7f4ea"})
-				RETURNING id, created_at, updated_at;
-			`;
+            INSERT INTO notes (user_id, title, content, tags, color, is_pinned)
+            VALUES (
+                ${userId}, 
+                ${payload.title || ""}, 
+                ${payload.content || ""}, 
+                ${noteTags}, 
+                ${noteColor}, 
+                ${payload.is_pinned || false}
+            )
+            RETURNING id, created_at, updated_at;
+        `;
 
 			const newNote: Note = {
 				id: inserted.id,
 				user_id: userId,
 				title: payload.title || "",
 				content: payload.content || "",
-				tags: [],
-				color: payload.color || "#f7f4ea",
+				tags: noteTags,
+				color: noteColor,
 				is_pinned: payload.is_pinned || false,
 				is_archived: false,
 				created_at: inserted.created_at,
@@ -84,7 +95,6 @@ export const useNotesStore = defineStore("notes", () => {
 			error.value = "Error al crear la nota.";
 		}
 	};
-
 	const updateNote = async (
 		id: string,
 		payload: { title: string; content: string; color?: string },
@@ -260,15 +270,17 @@ export const useNotesStore = defineStore("notes", () => {
 	};
 
 	// FEAT 2: Autocategorización y Etiquetas (JSON estructurado)
-	const autoTagNote = async (id: string) => {
-		const note = notes.value.find((n) => n.id === id);
-		if (!note || !note.content) return;
+	// En useNotesStore.ts
+	const suggestTagsForText = async (
+		text: string,
+	): Promise<{ tags: string[]; color?: string }> => {
+		if (!text.trim()) return { tags: [] };
 
 		aiLoading.value = true;
 		try {
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
-				contents: `Analiza el contenido de esta nota y devuelve de 1 a 3 etiquetas cortas en español y un color cálido pastel sugerido para papel en formato HEX (ej: #f7f4ea, #f2eee3, #eaf2e8).\n\nTexto: "${note.content}"`,
+				contents: `Analiza el siguiente texto y devuelve entre 1 y 4 etiquetas cortas en español descriptivas para categorizarlo (sin el símbolo #).\n\nTexto: "${text}"`,
 				config: {
 					responseMimeType: "application/json",
 					responseSchema: {
@@ -280,20 +292,19 @@ export const useNotesStore = defineStore("notes", () => {
 							},
 							color: { type: "string" },
 						},
-						required: ["tags", "color"],
+						required: ["tags"],
 					},
 				},
 			});
 
 			const data = JSON.parse(response.text || "{}");
-			if (data.tags && Array.isArray(data.tags)) {
-				await saveNoteAiData(id, {
-					tags: data.tags,
-					color: data.color,
-				});
-			}
+			return {
+				tags: data.tags || [],
+				color: data.color || "#f7f4ea",
+			};
 		} catch (err) {
-			console.error("Error en auto-tagging:", err);
+			console.error("Error al generar etiquetas sugeridas:", err);
+			return { tags: [] };
 		} finally {
 			aiLoading.value = false;
 		}
@@ -301,24 +312,22 @@ export const useNotesStore = defineStore("notes", () => {
 
 	// FEAT 3: Generación / Expansión de Texto (para NoteInput)
 	async function expandText(promptText: string): Promise<string> {
+		if (!promptText.trim()) return "";
 		aiLoading.value = true;
 		try {
-			const response = await fetch("/api/ai/expand", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ text: promptText }),
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: `Continúa redactando de forma natural y fluida el siguiente borrador de nota sin repetir el texto original:\n\n"${promptText}"`,
 			});
 
-			const data = await response.json();
-			const generatedText =
-				data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+			const generatedText = response.text?.trim() || "";
 
-			// Si la respuesta no incluye el prompt original al inicio, los unimos
-			if (!generatedText.startsWith(promptText)) {
-				return `${promptText}${generatedText}`;
-			}
-
-			return generatedText;
+			// Concatenación limpia
+			const needsSpace =
+				!promptText.endsWith(" ") &&
+				!generatedText.startsWith(" ") &&
+				!generatedText.startsWith(",");
+			return `${promptText}${needsSpace ? " " : ""}${generatedText}`;
 		} catch (error) {
 			console.error("Error al expandir borrador:", error);
 			return promptText;
@@ -391,15 +400,15 @@ export const useNotesStore = defineStore("notes", () => {
 			const queryVector = `[${values.join(",")}]`;
 
 			const rows = await sql`
-      SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at,
-             1 - (embedding <=> ${queryVector}::vector) AS similarity
-      FROM notes
-      WHERE user_id = ${getUserId()}
-        AND embedding IS NOT NULL
-        AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
-      ORDER BY similarity DESC
-      LIMIT 10;
-    `;
+				SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at,
+						1 - (embedding <=> ${queryVector}::vector) AS similarity
+				FROM notes
+				WHERE user_id = ${getUserId()}
+					AND embedding IS NOT NULL
+					AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
+				ORDER BY similarity DESC
+				LIMIT 10;
+			`;
 
 			const formattedRows: Note[] = rows.map((n: any) => ({
 				...n,
@@ -415,7 +424,31 @@ export const useNotesStore = defineStore("notes", () => {
 			loading.value = false;
 		}
 	};
+	// FEAT 6: Resumir Puntos Clave para Borrador (NoteInput)
+	// En useNotesStore.ts
+	const summarizeDraft = async (currentText: string): Promise<string> => {
+		if (!currentText.trim()) return "";
 
+		aiLoading.value = true;
+		try {
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: `Analiza el siguiente texto y genera un resumen conciso usando listas HTML directamente (sin frases introductorias ni etiquetas de markdown como ** o #). 
+
+Usa etiquetas HTML como <ul>, <li>, <strong> para destacar conceptos clave.
+
+Texto:
+"${currentText}"`,
+			});
+
+			return response.text?.trim() || currentText;
+		} catch (err) {
+			console.error("Error al resumir borrador:", err);
+			return currentText;
+		} finally {
+			aiLoading.value = false;
+		}
+	};
 	return {
 		notes,
 		archivedNotes,
@@ -429,9 +462,10 @@ export const useNotesStore = defineStore("notes", () => {
 		toggleArchiveNote,
 		deleteNote,
 		summarizeNote,
-		autoTagNote,
+		suggestTagsForText,
 		expandText,
 		refineStyleOptions,
 		searchNotesSemantics,
+		summarizeDraft,
 	};
 });

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted } from 'vue'
-import { Sparkles, AlignLeft } from 'lucide-vue-next'
+import { Sparkles, AlignLeft, ListOrdered } from 'lucide-vue-next'
 
 defineProps<{
   isLoading: boolean
   disabled: boolean
 }>()
 
-const emit = defineEmits(['expand', 'refine'])
+const emit = defineEmits(['expand', 'refine', 'summarize'])
 
 const isOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
@@ -46,7 +46,7 @@ const handleAction = (action: () => void) => {
 
     <div 
       v-if="isOpen" 
-      class="absolute left-0 bottom-full mb-2 w-48 bg-[#f7f4ea] border border-[#d8d3c5] rounded-lg shadow-xl py-1 z-50 text-xs text-[#3d3b37]"
+      class="absolute left-0 bottom-full mb-2 w-52 bg-[#f7f4ea] border border-[#d8d3c5] rounded-lg shadow-xl py-1 z-50 text-xs text-[#3d3b37]"
     >
       <button 
         @click.stop="handleAction(() => emit('expand'))" 
@@ -54,8 +54,18 @@ const handleAction = (action: () => void) => {
       >
         <Sparkles class="w-3.5 h-3.5 text-[#e06c53]" /> Continuar borrador
       </button>
+
+      <!-- Nueva Acción: Resumir en Puntos Clave -->
+      <button 
+        @click.stop="handleAction(() => emit('summarize'))" 
+        class="w-full text-left px-3 py-2 hover:bg-[#e8e3d5] flex items-center gap-2 text-[#3d3b37]"
+      >
+        <ListOrdered class="w-3.5 h-3.5 text-[#e06c53]" /> Resumir puntos clave
+      </button>
+
       <div class="border-t border-[#d8d3c5]/60 my-1"></div>
       <div class="px-3 py-1 text-[10px] font-mono text-[#8c867a] uppercase">Sugerir Variantes</div>
+      
       <button 
         @click.stop="handleAction(() => emit('refine', 'formal'))" 
         class="w-full text-left px-3 py-1.5 hover:bg-[#e8e3d5] flex items-center gap-2"

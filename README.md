@@ -136,27 +136,46 @@ Esta separación permite mantener una estructura organizada y facilita la evoluc
 ## 📁 Estructura del Proyecto
 
 ```text
-src/
-├── components/
-│   └── notes/
-│       ├── AiMenuDropdown.vue
-│       │   # Menú flotante con las acciones de IA
-│       │
-│       ├── AiVariantsModal.vue
-│       │   # Modal para previsualizar y seleccionar variantes
-│       │
-│       └── NoteInput.vue
-│           # Componente orquestador del formulario de notas
-│
-├── stores/
-│   └── useNotesStore.ts
-│       # Estado global de notas y comunicación con la API de IA
-│
-├── App.vue
-│   # Componente raíz de la aplicación
-│
-└── ...
-```
+ai-notes-app/
+├── public/                     # Archivos estáticos e iconos
+│   ├── favicon.svg
+│   └── icons.svg
+├── src/
+│   ├── assets/                 # Recursos gráficos (imágenes, SVGs)
+│   ├── components/             # Componentes reutilizables de UI
+│   │   ├── ai/                 # Componentes específicos de funciones IA
+│   │   ├── layout/             # Componentes de estructura (Navbar, Sidebar)
+│   │   ├── modals/             # Modales globales (AiMenuDropdown, AiVariantsModal)
+│   │   ├── notes/              # Componentes de gestión de notas (NoteCard, NoteInput)
+│   │   └── ui/                 # Elementos genéricos de interfaz
+│   ├── composables/            # Lógica reutilizable / Composables de Vue
+│   ├── lib/                    # Clientes de integración y servicios
+│   │   ├── gemini.ts           # Configuración del SDK de Google Gemini AI
+│   │   └── neon.ts             # Conexión y consultas a base de datos Neon
+│   ├── router/                 # Configuración de Vue Router
+│   │   └── index.ts
+│   ├── stores/                 # Gestión de estado global con Pinia
+│   │   ├── useAuthStore.ts     # Estado de autenticación de usuario
+│   │   └── useNotesStore.ts    # Estado y operaciones CRUD / IA de notas
+│   ├── types/                  # Definiciones de TypeScript
+│   │   └── index.ts
+│   ├── views/                  # Vistas de las páginas principales
+│   │   ├── ArchiveView.vue
+│   │   ├── LandingView.vue
+│   │   ├── LoginView.vue
+│   │   ├── NotesView.vue
+│   │   ├── RegisterView.vue
+│   │   └── SettingsView.vue
+│   ├── App.vue                 # Componente raíz de la aplicación
+│   ├── main.ts                 # Punto de entrada principal de Vue
+│   └── style.css               # Estilos globales y Tailwind CSS
+├── .env                        # Variables de entorno locales
+├── index.html                  # Template HTML de entrada
+├── package.json                # Dependencias y scripts del proyecto
+├── README.md                   # Documentación principal
+├── tsconfig.json               # Configuración base de TypeScript
+├── vercel.json                 # Configuración de despliegue en Vercel
+└── vite.config.ts              # Configuración de empaquetado con Vite
 
 ---
 

@@ -11,6 +11,9 @@
   "dependencies": {
     "@google/genai": "^2.22.0",
     "@neondatabase/serverless": "^1.1.0",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "@tiptap/vue-3": "^3.31.3",
     "bcryptjs": "^3.0.3",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^4.0.3",
