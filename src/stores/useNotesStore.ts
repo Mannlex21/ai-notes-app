@@ -485,6 +485,33 @@ Texto:
 		}
 	};
 
+	// FEAT 8: Traductor Integrado
+	const translateText = async (
+		text: string,
+		targetLanguage?: string,
+	): Promise<string> => {
+		if (!text.trim()) return "";
+
+		aiLoading.value = true;
+		try {
+			const prompt = targetLanguage
+				? `Traduce el siguiente texto al idioma ${targetLanguage}. Devuelve ÚNICAMENTE la traducción, sin notas ni explicaciones:\n\n"${text}"`
+				: `Analiza el siguiente texto. Si está en español, tradúcelo al inglés. Si está en inglés o en otro idioma, tradúcelo al español. Devuelve ÚNICAMENTE la traducción resultante, sin explicaciones ni comillas:\n\n"${text}"`;
+
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: prompt,
+			});
+
+			return response.text?.trim() || text;
+		} catch (err) {
+			console.error("Error al traducir texto con IA:", err);
+			return text;
+		} finally {
+			aiLoading.value = false;
+		}
+	};
+
 	return {
 		notes,
 		archivedNotes,
@@ -504,5 +531,6 @@ Texto:
 		searchNotesSemantics,
 		summarizeDraft,
 		extractActionItems,
+		translateText,
 	};
 });

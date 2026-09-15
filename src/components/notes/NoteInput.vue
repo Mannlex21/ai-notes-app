@@ -1,12 +1,20 @@
 <!-- NoteInput.vue -->
 <script setup lang="ts">
 import { ref, watch, nextTick, onUnmounted } from "vue";
-import { Plus, CheckSquare, X, Type } from "lucide-vue-next";
+import {
+	Plus,
+	CheckSquare,
+	X,
+	Type,
+	Languages,
+	LanguagesIcon,
+} from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import AiMenuDropdown from "../modals/AiMenuDropdown.vue";
 import AiVariantsModal from "../modals/AiVariantsModal.vue";
 import TagManagerModal from "../modals/TagManagerModal.vue";
 import RichTextEditor from "../notes/RichTextEditor.vue";
+import TranslationModal from "../modals/TranslationModal.vue";
 
 const store = useNotesStore();
 const emit = defineEmits(["save-note"]);
@@ -22,8 +30,8 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const tags = ref<string[]>([]);
 const noteColor = ref("#f2eee3");
 const showTagModal = ref(false);
-
 const showStyleModal = ref(false);
+const showTranslateModal = ref(false);
 const styleVariants = ref<string[]>([]);
 
 const checklistItems = ref<{ text: string; done: boolean }[]>([
@@ -187,6 +195,7 @@ const handleSummarize = async () => {
 		showStyleModal.value = true;
 	}
 };
+
 const handleExtractTasks = async () => {
 	if (!content.value.trim()) return;
 
@@ -199,6 +208,17 @@ const handleExtractTasks = async () => {
 		}));
 		isChecklist.value = true;
 	}
+};
+
+const handleTranslateLanguage = async (targetLanguage: string) => {
+	if (!content.value.trim()) return;
+
+	const translated = await store.translateText(content.value, targetLanguage);
+	if (translated) {
+		content.value = translated;
+		adjustTextareaHeight();
+	}
+	showTranslateModal.value = false;
 };
 </script>
 
@@ -356,6 +376,15 @@ const handleExtractTasks = async () => {
 						>
 							<Type class="w-4 h-4" />
 						</button>
+						<button
+							v-if="!isChecklist"
+							@click="showTranslateModal = true"
+							:disabled="!content.trim() || store.aiLoading"
+							class="p-1.5 rounded-md hover:bg-[#e8e3d5] text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-40 flex items-center gap-1"
+							title="Traducir nota"
+						>
+							<Languages class="w-4 h-4" />
+						</button>
 
 						<AiMenuDropdown
 							v-if="!isChecklist"
@@ -403,6 +432,13 @@ const handleExtractTasks = async () => {
 			:variants="styleVariants"
 			@close="showStyleModal = false"
 			@select="selectVariant"
+		/>
+		<!-- Modal de Selección de Idioma -->
+		<TranslationModal
+			:is-open="showTranslateModal"
+			:is-loading="store.aiLoading"
+			@close="showTranslateModal = false"
+			@translate="handleTranslateLanguage"
 		/>
 	</div>
 </template>
