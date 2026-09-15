@@ -21,6 +21,7 @@ import TranslationModal from "../modals/TranslationModal.vue";
 import RichTextEditor from "../notes/RichTextEditor.vue";
 import type { Note } from "../../types";
 import { Sparkles } from "lucide-vue-next";
+import { useAisStore } from "../../stores/useAiStore.ts";
 
 // Paleta de colores suaves que garantizan contraste con texto oscuro (#2a2926 / #3d3b37)
 const NOTE_COLORS = [
@@ -52,7 +53,8 @@ const emit = defineEmits<{
 	): void;
 }>();
 
-const store = useNotesStore();
+const notesStore = useNotesStore();
+const aiStore = useAisStore();
 
 const title = ref("");
 const content = ref("");
@@ -322,7 +324,7 @@ const handleRemoveTag = (tagToRemove: string) => {
 
 const handleAutoTagAi = async () => {
 	if (!content.value.trim()) return;
-	const result = await store.suggestTagsForText(content.value);
+	const result = await aiStore.suggestTagsForText(content.value);
 	if (result.tags && result.tags.length > 0) {
 		const combined = new Set([...tags.value, ...result.tags]);
 		tags.value = Array.from(combined);
@@ -388,7 +390,7 @@ const handleSave = () => {
 
 const handleExpandText = async () => {
 	if (!content.value.trim()) return;
-	const expanded = await store.expandText(content.value);
+	const expanded = await aiStore.expandText(content.value);
 	if (expanded) {
 		if (
 			expanded
@@ -409,7 +411,7 @@ const handleExpandText = async () => {
 
 const handleRefineStyle = async (tone: "formal" | "conciso" | "casual") => {
 	if (!content.value.trim()) return;
-	const options = await store.refineStyleOptions(content.value, tone);
+	const options = await aiStore.refineStyleOptions(content.value, tone);
 	if (options && options.length > 0) {
 		styleVariants.value = options;
 		showStyleModal.value = true;
@@ -424,7 +426,7 @@ const selectVariant = (selectedText: string) => {
 
 const handleSummarize = async () => {
 	if (!content.value.trim()) return;
-	const summaryResult = await store.summarizeDraft(content.value);
+	const summaryResult = await aiStore.summarizeDraft(content.value);
 	if (summaryResult) {
 		styleVariants.value = [summaryResult];
 		showStyleModal.value = true;
@@ -433,7 +435,7 @@ const handleSummarize = async () => {
 
 const handleExtractTasks = async () => {
 	if (!content.value.trim()) return;
-	const extractedTasks = await store.extractActionItems(content.value);
+	const extractedTasks = await aiStore.extractActionItems(content.value);
 	if (extractedTasks.length > 0) {
 		checklistItems.value = extractedTasks.map((taskText) => ({
 			text: taskText,
@@ -445,7 +447,10 @@ const handleExtractTasks = async () => {
 
 const handleTranslateLanguage = async (targetLanguage: string) => {
 	if (!content.value.trim()) return;
-	const translated = await store.translateText(content.value, targetLanguage);
+	const translated = await aiStore.translateText(
+		content.value,
+		targetLanguage,
+	);
 	if (translated) {
 		content.value = translated;
 		saveHistoryState();
@@ -455,7 +460,7 @@ const handleTranslateLanguage = async (targetLanguage: string) => {
 
 const handleAutoTitle = async () => {
 	if (!content.value.trim()) return;
-	const generatedTitle = await store.generateTitle(content.value);
+	const generatedTitle = await aiStore.generateTitle(content.value);
 	if (generatedTitle) title.value = generatedTitle;
 };
 
@@ -527,7 +532,7 @@ const formattedCreatedAt = computed(() => {
 					<button
 						@click="handleAutoTitle"
 						:disabled="
-							store.aiLoading ||
+							notesStore.aiLoading ||
 							!content ||
 							content.replace(/<[^>]*>/g, '').trim().length === 0
 						"
@@ -538,7 +543,7 @@ const formattedCreatedAt = computed(() => {
 						<Wand2
 							:class="[
 								'w-5 h-5 text-[#e06c53] stroke-[2.25]',
-								store.aiLoading ? 'animate-spin' : '',
+								notesStore.aiLoading ? 'animate-spin' : '',
 							]"
 						/>
 					</button>
@@ -616,14 +621,14 @@ const formattedCreatedAt = computed(() => {
 					<!-- Botón IA (Primera opción con icono Sparkles) -->
 					<button
 						@click="handleAutoTagAi"
-						:disabled="store.aiLoading || !content.trim()"
+						:disabled="notesStore.aiLoading || !content.trim()"
 						class="p-1 px-2 text-xs text-[#e06c53] hover:bg-[#2a2926]/10 rounded-md transition-colors flex items-center gap-1 font-medium disabled:opacity-40 disabled:hover:bg-transparent"
 						title="Auto-categorizar con IA"
 					>
 						<Sparkles
 							:class="[
 								'w-3.5 h-3.5 text-[#e06c53]',
-								store.aiLoading ? 'animate-spin' : '',
+								notesStore.aiLoading ? 'animate-spin' : '',
 							]"
 						/>
 					</button>
@@ -742,7 +747,7 @@ const formattedCreatedAt = computed(() => {
 						<button
 							v-if="!isChecklist"
 							@click="showTranslateModal = true"
-							:disabled="!content.trim() || store.aiLoading"
+							:disabled="!content.trim() || notesStore.aiLoading"
 							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-40 flex items-center gap-1"
 							title="Traducir nota"
 						>
@@ -751,7 +756,7 @@ const formattedCreatedAt = computed(() => {
 
 						<AiMenuDropdown
 							v-if="!isChecklist"
-							:is-loading="store.aiLoading"
+							:is-loading="notesStore.aiLoading"
 							:disabled="!content.trim()"
 							@expand="handleExpandText"
 							@summarize="handleSummarize"
@@ -805,7 +810,7 @@ const formattedCreatedAt = computed(() => {
 		<TagManagerModal
 			:is-open="showTagModal"
 			:tags="tags"
-			:is-loading-ai="store.aiLoading"
+			:is-loading-ai="notesStore.aiLoading"
 			@close="showTagModal = false"
 			@add-tag="handleAddTag"
 			@remove-tag="handleRemoveTag"
@@ -820,7 +825,7 @@ const formattedCreatedAt = computed(() => {
 
 		<TranslationModal
 			:is-open="showTranslateModal"
-			:is-loading="store.aiLoading"
+			:is-loading="notesStore.aiLoading"
 			@close="showTranslateModal = false"
 			@translate="handleTranslateLanguage"
 		/>

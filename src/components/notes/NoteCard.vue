@@ -9,6 +9,7 @@ import {
 } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import type { Note } from "../../types";
+import { useAisStore } from "../../stores/useAiStore";
 
 const props = defineProps<{ note: Note }>();
 
@@ -19,16 +20,17 @@ const emit = defineEmits<{
 	(e: "archive", id: string): void;
 }>();
 
-const store = useNotesStore();
+const notesStore = useNotesStore();
+const aiStore = useAisStore();
 
 const handleAutoTag = async () => {
 	if (!props.note.content && !props.note.title) return;
 
 	const fullText = `${props.note.title || ""} ${props.note.content || ""}`;
-	const result = await store.suggestTagsForText(fullText);
+	const result = await aiStore.suggestTagsForText(fullText);
 
 	if (result.tags || result.color) {
-		await store.updateNote(props.note.id, {
+		await notesStore.updateNote(props.note.id, {
 			title: props.note.title,
 			content: props.note.content,
 			tags: Array.from(
@@ -48,7 +50,7 @@ const handleAutoTag = async () => {
 	>
 		<!-- Botón Fijar (Pin) -->
 		<button
-			@click.stop="store.togglePin(note.id)"
+			@click.stop="notesStore.togglePin(note.id)"
 			class="absolute top-3 right-3 p-1.5 rounded-lg text-[#8c867a] hover:text-[#2a2926] hover:bg-[#2a2926]/10 transition-colors"
 			:class="{ 'text-[#e06c53] fill-[#e06c53]': note.is_pinned }"
 			:title="note.is_pinned ? 'Desfijar nota' : 'Fijar nota'"
@@ -88,7 +90,7 @@ const handleAutoTag = async () => {
 			<!-- Acciones con IA -->
 			<button
 				@click.stop="handleAutoTag"
-				:disabled="store.aiLoading"
+				:disabled="notesStore.aiLoading"
 				class="flex items-center gap-1 text-[11px] hover:text-[#e06c53] transition-colors disabled:opacity-50"
 				title="Generar etiquetas y color con IA"
 			>
@@ -102,7 +104,7 @@ const handleAutoTag = async () => {
 			>
 				<!-- Archivar / Desarchivar -->
 				<button
-					@click.stop="store.toggleArchiveNote(note.id)"
+					@click.stop="notesStore.toggleArchiveNote(note.id)"
 					class="p-1 hover:text-[#2a2926] hover:bg-[#2a2926]/10 rounded transition-colors"
 					:title="note.is_archived ? 'Desarchivar' : 'Archivar'"
 				>

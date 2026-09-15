@@ -3,10 +3,12 @@ import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Search, Sparkles, Loader2, X } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
+import { useAisStore } from "../../stores/useAiStore";
 
 const route = useRoute();
 const router = useRouter();
 const notesStore = useNotesStore();
+const aiStore = useAisStore();
 
 const searchQuery = ref("");
 const isAiMode = ref(false);
@@ -33,7 +35,7 @@ const executeSearch = () => {
 	if (isAiMode.value) {
 		// Modo IA: Búsqueda Semántica en Neon pgvector
 		notesStore.searchQuery = ""; // Limpiar filtro manual
-		notesStore.searchNotesSemantics(searchQuery.value);
+		aiStore.searchNotesSemantics(searchQuery.value);
 	} else {
 		// Modo Manual: Actualizar el query en el store para el filtro computado
 		notesStore.searchQuery = searchQuery.value;

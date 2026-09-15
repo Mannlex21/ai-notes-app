@@ -8,14 +8,14 @@ import { useNotesStore } from "../stores/useNotesStore";
 import { useUserConfigStore } from "../stores/useUserConfigStore";
 import type { Note } from "../types";
 
-const store = useNotesStore();
+const notesStore = useNotesStore();
 const configStore = useUserConfigStore();
 
 const isEditModalOpen = ref(false);
 const noteToEdit = ref<Note | null>(null);
 
 onMounted(() => {
-	store.fetchNotes();
+	notesStore.fetchNotes();
 	configStore.fetchUserConfig();
 });
 
@@ -38,14 +38,14 @@ const handleSaveModal = async (payload: {
 	color: string;
 }) => {
 	if (payload.id) {
-		await store.updateNote(payload.id, {
+		await notesStore.updateNote(payload.id, {
 			title: payload.title,
 			content: payload.content,
 			tags: payload.tags,
 			color: payload.color,
 		});
 	} else {
-		await store.addNote({
+		await notesStore.addNote({
 			title: payload.title,
 			content: payload.content,
 			tags: payload.tags,
@@ -58,18 +58,18 @@ const handleSaveModal = async (payload: {
 <template>
 	<div class="space-y-8">
 		<!-- Disparador para crear notas -->
-		<NoteInput @save-note="store.addNote" />
+		<NoteInput @save-note="notesStore.addNote" />
 
 		<!-- Contenedor dinámico -->
 		<div :class="containerLayoutClass">
 			<NoteCard
-				v-for="note in store.notes"
+				v-for="note in notesStore.notes"
 				:key="note.id"
 				:note="note"
 				@click-card="handleOpenEdit"
-				@delete="store.deleteNote"
-				@toggle-pin="store.togglePin"
-				@archive="store.toggleArchiveNote"
+				@delete="notesStore.deleteNote"
+				@toggle-pin="notesStore.togglePin"
+				@archive="notesStore.toggleArchiveNote"
 			/>
 		</div>
 
