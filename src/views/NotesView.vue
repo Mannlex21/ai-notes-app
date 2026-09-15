@@ -1,19 +1,29 @@
 <!-- views/NotesView.vue -->
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, computed } from "vue";
 import NoteInput from "../components/notes/NoteInput.vue";
 import NoteCard from "../components/notes/NoteCard.vue";
 import NoteModal from "../components/notes/NoteModal.vue";
 import { useNotesStore } from "../stores/useNotesStore";
+import { useUserConfigStore } from "../stores/useUserConfigStore";
 import type { Note } from "../types";
 
 const store = useNotesStore();
+const configStore = useUserConfigStore();
 
 const isEditModalOpen = ref(false);
 const noteToEdit = ref<Note | null>(null);
 
 onMounted(() => {
 	store.fetchNotes();
+	configStore.fetchUserConfig();
+});
+
+// Layout dinámico dependiente de la configuración
+const containerLayoutClass = computed(() => {
+	return configStore.currentView === "grid"
+		? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+		: "flex flex-col gap-3 max-w-3xl mx-auto";
 });
 
 const handleOpenEdit = (note: Note) => {
@@ -28,14 +38,12 @@ const handleSaveModal = async (payload: {
 	color: string;
 }) => {
 	if (payload.id) {
-		// Modo edición
 		await store.updateNote(payload.id, {
 			title: payload.title,
 			content: payload.content,
 			color: payload.color,
 		});
 	} else {
-		// Modo creación
 		await store.addNote(payload);
 	}
 };
@@ -46,8 +54,8 @@ const handleSaveModal = async (payload: {
 		<!-- Disparador para crear notas -->
 		<NoteInput @save-note="store.addNote" />
 
-		<!-- Grilla de notas activa -->
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+		<!-- Contenedor dinámico (Cuadrícula o Lista) -->
+		<div :class="containerLayoutClass">
 			<NoteCard
 				v-for="note in store.notes"
 				:key="note.id"
