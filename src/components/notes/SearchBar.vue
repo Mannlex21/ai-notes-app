@@ -1,16 +1,28 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { Search, Sparkles, Loader2, X } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 
+const route = useRoute();
+const router = useRouter();
 const notesStore = useNotesStore();
+
 const searchQuery = ref("");
 const isAiMode = ref(false);
 
 let debounceTimer: ReturnType<typeof setTimeout>;
 
+// Redirigir a las notas si el usuario interactúa con la búsqueda fuera de la página principal
+const ensureNotesRoute = () => {
+	if (route.path !== "/") {
+		router.push("/");
+	}
+};
+
 // Ejecutar búsqueda según el modo activo
 const executeSearch = () => {
+	ensureNotesRoute();
 	clearTimeout(debounceTimer);
 
 	if (!searchQuery.value.trim()) {
@@ -30,6 +42,7 @@ const executeSearch = () => {
 
 // Búsqueda mientras escribe (Debounce)
 const handleInput = () => {
+	ensureNotesRoute();
 	clearTimeout(debounceTimer);
 
 	if (!searchQuery.value.trim()) {
@@ -46,12 +59,13 @@ const handleInput = () => {
 const clearSearch = () => {
 	clearTimeout(debounceTimer);
 	searchQuery.value = "";
-	notesStore.searchQuery = ""; // <-- Clave para resetear el filtro en displayNotes
+	notesStore.searchQuery = "";
 	notesStore.fetchNotes();
 };
 
 // Alternar entre modo Manual e IA
 const toggleAiMode = () => {
+	ensureNotesRoute();
 	isAiMode.value = !isAiMode.value;
 	clearSearch();
 };
@@ -67,6 +81,8 @@ const toggleAiMode = () => {
 		<!-- Input Principal -->
 		<input
 			v-model="searchQuery"
+			@focus="ensureNotesRoute"
+			@click="ensureNotesRoute"
 			@input="handleInput"
 			@keydown.enter.prevent="executeSearch"
 			type="text"
