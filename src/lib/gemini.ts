@@ -11,4 +11,4 @@ if (!apiKey) {
 export const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 export const GEMINI_MODEL = "gemini-3.6-flash";
-export const EMBEDDING_MODEL = "text-embedding-004";
+export const EMBEDDING_MODEL = "gemini-embedding-001";

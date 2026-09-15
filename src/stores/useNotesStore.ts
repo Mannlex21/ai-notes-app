@@ -111,11 +111,21 @@ export const useNotesStore = defineStore("notes", () => {
 		if (!userId) return;
 
 		try {
+			// 1. Recalcular el vector con los nuevos datos
+			const vector = await getEmbeddingVector(
+				`${payload.title || ""} ${payload.content || ""}`,
+			);
+
+			// 2. Actualizar incluyendo la columna embedding
 			await sql`
-				UPDATE notes
-				SET title = ${payload.title}, content = ${payload.content}, color = ${payload.color || "#f7f4ea"}, updated_at = NOW()
-				WHERE id = ${id} AND user_id = ${userId};
-			`;
+      UPDATE notes
+      SET title = ${payload.title}, 
+          content = ${payload.content}, 
+          color = ${payload.color || "#f7f4ea"}, 
+          embedding = ${vector}::vector,
+          updated_at = NOW()
+      WHERE id = ${id} AND user_id = ${userId};
+    `;
 
 			const note =
 				notes.value.find((n) => n.id === id) ||
@@ -425,12 +435,16 @@ export const useNotesStore = defineStore("notes", () => {
 	};
 
 	// Helper interno para convertir texto a formato vector
+	// Helper interno para convertir texto a formato vector
 	const getEmbeddingVector = async (text: string): Promise<string | null> => {
 		if (!text.trim()) return null;
 		try {
 			const res = await ai.models.embedContent({
 				model: EMBEDDING_MODEL,
 				contents: text,
+				config: {
+					outputDimensionality: 768, // Reducir a 768 dimensiones para pgvector
+				},
 			});
 			const values = res.embeddings?.[0]?.values;
 			return values ? `[${values.join(",")}]` : null;
