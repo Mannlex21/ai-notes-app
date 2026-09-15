@@ -3,12 +3,12 @@ import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Search, Sparkles, Loader2, X } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
-import { useAisStore } from "../../stores/useAiStore";
+import { useAiStore } from "../../stores/useAiStore";
 
 const route = useRoute();
 const router = useRouter();
 const notesStore = useNotesStore();
-const aiStore = useAisStore();
+const aiStore = useAiStore();
 
 const searchQuery = ref("");
 const isAiMode = ref(false);

@@ -3,7 +3,8 @@ import { defineStore } from "pinia";
 import { sql } from "../lib/neon";
 import { useAuthStore } from "./useAuthStore";
 import type { Note } from "../types";
-import { useAisStore } from "./useAiStore";
+import { useAiStore } from "./useAiStore";
+import { useUserConfigStore } from "./useUserConfigStore";
 
 export const useNotesStore = defineStore("notes", () => {
 	const notes = ref<Note[]>([]);
@@ -14,7 +15,8 @@ export const useNotesStore = defineStore("notes", () => {
 	const error = ref<string | null>(null);
 
 	const authStore = useAuthStore();
-	const aiStore = useAisStore();
+	const aiStore = useAiStore();
+	const configStore = useUserConfigStore();
 	const getUserId = () => authStore.user?.id;
 
 	// ----------------------------------------------------
@@ -46,7 +48,6 @@ export const useNotesStore = defineStore("notes", () => {
 
 			notes.value = formattedRows.filter((n) => !n.is_archived);
 			archivedNotes.value = formattedRows.filter((n) => n.is_archived);
-			console.log(archivedNotes.value);
 		} catch (err) {
 			console.error("Error al obtener notas:", err);
 			error.value = "No se pudieron cargar las notas.";
@@ -64,8 +65,16 @@ export const useNotesStore = defineStore("notes", () => {
 		const userId = getUserId();
 		if (!userId) return;
 
-		const noteTags = payload.tags || [];
-		const noteColor = payload.color || "#f2eee3"; // Color base por defecto
+		let finalTags = payload.tags ? [...payload.tags] : [];
+		const noteColor = payload.color || "#f2eee3";
+		if (finalTags.length === 0 && configStore.autoTagging) {
+			const fullText =
+				`${payload.title || ""} ${payload.content || ""}`.trim();
+			if (fullText) {
+				const result = await aiStore.suggestTagsForText(fullText);
+				finalTags = result.tags;
+			}
+		}
 
 		try {
 			const vector = await aiStore.getEmbeddingVector(
@@ -78,7 +87,7 @@ export const useNotesStore = defineStore("notes", () => {
 				${userId}, 
 				${payload.title || ""}, 
 				${payload.content || ""}, 
-				${noteTags}, 
+				${finalTags}, 
 				${noteColor}, 
 				${payload.is_pinned || false},
 				${vector}::vector
@@ -91,7 +100,7 @@ export const useNotesStore = defineStore("notes", () => {
 				user_id: userId,
 				title: payload.title || "",
 				content: payload.content || "",
-				tags: noteTags,
+				tags: finalTags,
 				color: noteColor,
 				is_pinned: payload.is_pinned || false,
 				is_archived: false,

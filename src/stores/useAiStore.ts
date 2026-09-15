@@ -2,11 +2,12 @@ import { ref } from "vue";
 import { defineStore } from "pinia";
 import { sql } from "../lib/neon";
 import { useAuthStore } from "./useAuthStore";
+import { useUserConfigStore } from "./useUserConfigStore";
 import { ai, GEMINI_MODEL, EMBEDDING_MODEL } from "../lib/gemini";
 import type { Note } from "../types";
 import { useNotesStore } from "./useNotesStore";
 
-export const useAisStore = defineStore("ai", () => {
+export const useAiStore = defineStore("ai", () => {
 	const notes = ref<Note[]>([]);
 	const searchQuery = ref("");
 	const archivedNotes = ref<Note[]>([]);
@@ -15,25 +16,43 @@ export const useAisStore = defineStore("ai", () => {
 	const error = ref<string | null>(null);
 
 	const authStore = useAuthStore();
-	const getUserId = () => authStore.user?.id;
+	const configStore = useUserConfigStore();
 	const noteStore = useNotesStore();
+
+	const getUserId = () => authStore.user?.id;
+
+	// Helper para validar y consumir un prompt antes de llamar a la API
+	const checkAndConsumePrompt = async (): Promise<boolean> => {
+		if (configStore.isLimitReached) {
+			error.value = "Has alcanzado tu límite diario de peticiones de IA.";
+			return false;
+		}
+		return await configStore.incrementPromptUsage();
+	};
 
 	// ----------------------------------------------------
 	// FUNCIONALIDADES DE IA (BAJO DEMANDA)
 	// ----------------------------------------------------
 
-	// FEAT 1: Autocategorización y Etiquetas (JSON estructurado)
+	// FEAT 1: Autocategorización y Etiquetas
 	const suggestTagsForText = async (
 		text: string,
 	): Promise<{ tags: string[]; color?: string }> => {
 		if (!text.trim()) return { tags: [] };
+		if (configStore.isLimitReached) return { tags: [] };
 
 		aiLoading.value = true;
+		error.value = null;
+
 		try {
+			const canProceed = await checkAndConsumePrompt();
+			if (!canProceed) return { tags: [] };
+
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
 				contents: `Analiza el siguiente texto y devuelve entre 1 y 4 etiquetas cortas en español descriptivas para categorizarlo (sin el símbolo #).\n\nTexto: "${text}"`,
 				config: {
+					temperature: configStore.aiTemperature,
 					responseMimeType: "application/json",
 					responseSchema: {
 						type: "object",
@@ -62,38 +81,48 @@ export const useAisStore = defineStore("ai", () => {
 		}
 	};
 
-	// FEAT 2: Generación / Expansión de Texto (para NoteInput)
+	// FEAT 2: Generación / Expansión de Texto
 	const expandText = async (promptText: string): Promise<string> => {
 		if (!promptText.trim()) return "";
+		if (configStore.isLimitReached) return promptText;
+
 		aiLoading.value = true;
+		error.value = null;
+
 		try {
+			const canProceed = await checkAndConsumePrompt();
+			if (!canProceed) return promptText;
+
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
 				contents: `Continúa redactando de forma natural y fluida el siguiente borrador de nota sin repetir el texto original:\n\n"${promptText}"`,
+				config: {
+					temperature: configStore.aiTemperature,
+				},
 			});
 
 			const generatedText = response.text?.trim() || "";
-
-			// Concatenación limpia
 			const needsSpace =
 				!promptText.endsWith(" ") &&
 				!generatedText.startsWith(" ") &&
 				!generatedText.startsWith(",");
+
 			return `${promptText}${needsSpace ? " " : ""}${generatedText}`;
-		} catch (error) {
-			console.error("Error al expandir borrador:", error);
+		} catch (err) {
+			console.error("Error al expandir borrador:", err);
 			return promptText;
 		} finally {
 			aiLoading.value = false;
 		}
 	};
 
-	// FEAT 3: Mejora de Estilo y Gramática (Genera variantes para el Modal)
+	// FEAT 3: Mejora de Estilo y Gramática
 	const refineStyleOptions = async (
 		currentText: string,
 		tone: "formal" | "conciso" | "casual",
 	): Promise<string[]> => {
 		if (!currentText.trim()) return [];
+		if (configStore.isLimitReached) return [];
 
 		const tonePrompts = {
 			formal: "Reescribe el texto corrigiendo la gramática y adaptándolo a un tono profesional, claro y pulido.",
@@ -103,11 +132,17 @@ export const useAisStore = defineStore("ai", () => {
 		};
 
 		aiLoading.value = true;
+		error.value = null;
+
 		try {
+			const canProceed = await checkAndConsumePrompt();
+			if (!canProceed) return [];
+
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
 				contents: `Instrucción: Genera 3 variantes distintas reescritas según el tono solicitado.\n\nObjetivo: ${tonePrompts[tone]}\n\nTexto original:\n"${currentText}"`,
 				config: {
+					temperature: configStore.aiTemperature,
 					responseMimeType: "application/json",
 					responseSchema: {
 						type: "object",
@@ -134,25 +169,27 @@ export const useAisStore = defineStore("ai", () => {
 		}
 	};
 
-	// FEAT 4: Smart Search / RAG (Búsqueda Semántica con Embeddings)
+	// FEAT 4: Smart Search / RAG (Búsqueda Semántica)
 	const searchNotesSemantics = async (query: string) => {
 		if (!query.trim()) return await noteStore.fetchNotes();
 
 		loading.value = true;
+		error.value = null;
+
 		try {
 			const queryVector = await getEmbeddingVector(query);
 			if (!queryVector) return;
 
 			const rows = await sql`
-			SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at,
-					1 - (embedding <=> ${queryVector}::vector) AS similarity
-			FROM notes
-			WHERE user_id = ${getUserId()}
-				AND embedding IS NOT NULL
-				AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
-			ORDER BY similarity DESC
-			LIMIT 10;
-		`;
+				SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at,
+						1 - (embedding <=> ${queryVector}::vector) AS similarity
+				FROM notes
+				WHERE user_id = ${getUserId()}
+					AND embedding IS NOT NULL
+					AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
+				ORDER BY similarity DESC
+				LIMIT 10;
+			`;
 
 			const formattedRows: Note[] = rows.map((n: any) => ({
 				...n,
@@ -169,7 +206,7 @@ export const useAisStore = defineStore("ai", () => {
 		}
 	};
 
-	// Helper interno para convertir texto a formato vector
+	// Helper interno para generar vectores de embedding (sin restricción de prompts)
 	const getEmbeddingVector = async (text: string): Promise<string | null> => {
 		if (!text.trim()) return null;
 		try {
@@ -177,7 +214,7 @@ export const useAisStore = defineStore("ai", () => {
 				model: EMBEDDING_MODEL,
 				contents: text,
 				config: {
-					outputDimensionality: 768, // Reducir a 768 dimensiones para pgvector
+					outputDimensionality: 768,
 				},
 			});
 			const values = res.embeddings?.[0]?.values;
@@ -188,12 +225,18 @@ export const useAisStore = defineStore("ai", () => {
 		}
 	};
 
-	// FEAT 5: Resumir Puntos Clave para Borrador (NoteInput)
+	// FEAT 5: Resumir Puntos Clave
 	const summarizeDraft = async (currentText: string): Promise<string> => {
 		if (!currentText.trim()) return "";
+		if (configStore.isLimitReached) return currentText;
 
 		aiLoading.value = true;
+		error.value = null;
+
 		try {
+			const canProceed = await checkAndConsumePrompt();
+			if (!canProceed) return currentText;
+
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
 				contents: `Analiza el siguiente texto y genera un resumen conciso usando listas HTML directamente (sin frases introductorias ni etiquetas de markdown como ** o #). 
@@ -202,6 +245,9 @@ Usa etiquetas HTML como <ul>, <li>, <strong> para destacar conceptos clave.
 
 Texto:
 "${currentText}"`,
+				config: {
+					temperature: configStore.aiTemperature,
+				},
 			});
 
 			return response.text?.trim() || currentText;
@@ -213,16 +259,23 @@ Texto:
 		}
 	};
 
-	// FEAT 6: Smart Action Items / Extraer Tareas para Checklist
+	// FEAT 6: Extraer Tareas para Checklist
 	const extractActionItems = async (text: string): Promise<string[]> => {
 		if (!text.trim()) return [];
+		if (configStore.isLimitReached) return [];
 
 		aiLoading.value = true;
+		error.value = null;
+
 		try {
+			const canProceed = await checkAndConsumePrompt();
+			if (!canProceed) return [];
+
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
 				contents: `Analiza el siguiente texto, identifica compromisos, pendientes, llamadas o acciones a realizar y extráelos como una lista de tareas cortas y concisas en español.\n\nTexto: "${text}"`,
 				config: {
+					temperature: configStore.aiTemperature,
 					responseMimeType: "application/json",
 					responseSchema: {
 						type: "object",
@@ -255,9 +308,15 @@ Texto:
 		targetLanguage?: string,
 	): Promise<string> => {
 		if (!text.trim()) return "";
+		if (configStore.isLimitReached) return text;
 
 		aiLoading.value = true;
+		error.value = null;
+
 		try {
+			const canProceed = await checkAndConsumePrompt();
+			if (!canProceed) return text;
+
 			const prompt = targetLanguage
 				? `Traduce el siguiente texto al idioma ${targetLanguage}. Devuelve ÚNICAMENTE la traducción, sin notas ni explicaciones:\n\n"${text}"`
 				: `Analiza el siguiente texto. Si está en español, tradúcelo al inglés. Si está en inglés o en otro idioma, tradúcelo al español. Devuelve ÚNICAMENTE la traducción resultante, sin explicaciones ni comillas:\n\n"${text}"`;
@@ -265,6 +324,9 @@ Texto:
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
 				contents: prompt,
+				config: {
+					temperature: configStore.aiTemperature,
+				},
 			});
 
 			return response.text?.trim() || text;
@@ -279,12 +341,21 @@ Texto:
 	// FEAT 8: Auto-Título Inteligente
 	const generateTitle = async (content: string): Promise<string> => {
 		if (!content.trim()) return "";
+		if (configStore.isLimitReached) return "";
 
 		aiLoading.value = true;
+		error.value = null;
+
 		try {
+			const canProceed = await checkAndConsumePrompt();
+			if (!canProceed) return "";
+
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
 				contents: `Genera un título muy corto, atractivo y conciso (máximo 5 palabras) en español que resuma el siguiente contenido. Devuelve ÚNICAMENTE el texto del título, sin comillas, sin punto final ni explicaciones adicionales.\n\nContenido: "${content}"`,
+				config: {
+					temperature: configStore.aiTemperature,
+				},
 			});
 
 			return response.text?.trim() || "";

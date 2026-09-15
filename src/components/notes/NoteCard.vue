@@ -9,7 +9,7 @@ import {
 } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import type { Note } from "../../types";
-import { useAisStore } from "../../stores/useAiStore";
+import { useAiStore } from "../../stores/useAiStore";
 
 const props = defineProps<{ note: Note }>();
 
@@ -21,7 +21,7 @@ const emit = defineEmits<{
 }>();
 
 const notesStore = useNotesStore();
-const aiStore = useAisStore();
+const aiStore = useAiStore();
 
 const handleAutoTag = async () => {
 	if (!props.note.content && !props.note.title) return;

@@ -21,7 +21,7 @@ import TranslationModal from "../modals/TranslationModal.vue";
 import RichTextEditor from "../notes/RichTextEditor.vue";
 import type { Note } from "../../types";
 import { Sparkles } from "lucide-vue-next";
-import { useAisStore } from "../../stores/useAiStore.ts";
+import { useAiStore } from "../../stores/useAiStore.ts";
 
 // Paleta de colores suaves que garantizan contraste con texto oscuro (#2a2926 / #3d3b37)
 const NOTE_COLORS = [
@@ -54,7 +54,7 @@ const emit = defineEmits<{
 }>();
 
 const notesStore = useNotesStore();
-const aiStore = useAisStore();
+const aiStore = useAiStore();
 
 const title = ref("");
 const content = ref("");
@@ -614,10 +614,10 @@ const formattedCreatedAt = computed(() => {
 			</div>
 
 			<!-- Chips de Categorías -->
-			<div class="flex justify-between">
-				<div
-					class="px-1 py-2 flex flex-wrap items-center gap-1.5 border-t border-[#2a2926]/10"
-				>
+			<div
+				class="pt-2.5 pb-1 border-t border-[#2a2926]/10 flex items-center justify-between gap-2 w-full"
+			>
+				<div class="flex flex-wrap items-center gap-1.5">
 					<!-- Botón IA (Primera opción con icono Sparkles) -->
 					<button
 						@click="handleAutoTagAi"
