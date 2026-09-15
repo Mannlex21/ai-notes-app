@@ -28,20 +28,24 @@ export const useNotesStore = defineStore("notes", () => {
 
 		try {
 			const rows = await sql`
-				SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at
-				FROM notes
-				WHERE user_id = ${userId}
-				ORDER BY is_pinned DESC, created_at DESC;
-			`;
+			SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at
+			FROM notes
+			WHERE user_id = ${userId}
+			ORDER BY is_pinned DESC, created_at DESC;
+		`;
 
+			// Normalizamos el formato de cada nota al obtenerlas de PostgreSQL
 			const formattedRows: Note[] = rows.map((n: any) => ({
 				...n,
 				tags: n.tags || [],
 				color: n.color || "#f7f4ea",
+				is_pinned: Boolean(n.is_pinned),
+				is_archived: Boolean(n.is_archived),
 			}));
 
 			notes.value = formattedRows.filter((n) => !n.is_archived);
 			archivedNotes.value = formattedRows.filter((n) => n.is_archived);
+			console.log(archivedNotes.value);
 		} catch (err) {
 			console.error("Error al obtener notas:", err);
 			error.value = "No se pudieron cargar las notas.";
@@ -183,16 +187,18 @@ export const useNotesStore = defineStore("notes", () => {
 
 		try {
 			if (isCurrentlyActive) {
+				// Mover de Activas -> Archivadas
 				const [archivedNote] = notes.value.splice(noteIndexInActive, 1);
 				archivedNote.is_archived = true;
 				archivedNote.is_pinned = false;
 				archivedNotes.value.unshift(archivedNote);
 
 				await sql`
-					UPDATE notes SET is_archived = TRUE, is_pinned = FALSE, updated_at = NOW()
-					WHERE id = ${id} AND user_id = ${userId};
-				`;
+				UPDATE notes SET is_archived = TRUE, is_pinned = FALSE, updated_at = NOW()
+				WHERE id = ${id} AND user_id = ${userId};
+			`;
 			} else {
+				// Mover de Archivadas -> Activas
 				const noteIndexInArchived = archivedNotes.value.findIndex(
 					(n) => n.id === id,
 				);
@@ -205,9 +211,9 @@ export const useNotesStore = defineStore("notes", () => {
 					notes.value.unshift(restoredNote);
 
 					await sql`
-						UPDATE notes SET is_archived = FALSE, updated_at = NOW()
-						WHERE id = ${id} AND user_id = ${userId};
-					`;
+					UPDATE notes SET is_archived = FALSE, updated_at = NOW()
+					WHERE id = ${id} AND user_id = ${userId};
+				`;
 				}
 			}
 		} catch (err) {

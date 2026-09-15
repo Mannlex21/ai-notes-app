@@ -6,6 +6,7 @@ import RegisterView from "../views/RegisterView.vue";
 import NotesView from "../views/NotesView.vue";
 import { useAuthStore } from "../stores/useAuthStore.ts";
 import SettingsView from "../views/SettingsView.vue";
+import ArchiveView from "../views/ArchiveView.vue";
 
 const router = createRouter({
 	history: createWebHistory(import.meta.env.BASE_URL),
@@ -32,6 +33,12 @@ const router = createRouter({
 			path: "/notes",
 			name: "notes",
 			component: NotesView,
+			meta: { requiresAuth: true },
+		},
+		{
+			path: "/archive",
+			name: "archive",
+			component: ArchiveView,
 			meta: { requiresAuth: true },
 		},
 		{
