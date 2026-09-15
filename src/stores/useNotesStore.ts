@@ -7,6 +7,7 @@ import type { Note } from "../types";
 
 export const useNotesStore = defineStore("notes", () => {
 	const notes = ref<Note[]>([]);
+	const searchQuery = ref("");
 	const archivedNotes = ref<Note[]>([]);
 	const loading = ref(false);
 	const aiLoading = ref(false);
@@ -48,7 +49,6 @@ export const useNotesStore = defineStore("notes", () => {
 			loading.value = false;
 		}
 	};
-
 	const addNote = async (payload: {
 		title: string;
 		content: string;
@@ -63,18 +63,25 @@ export const useNotesStore = defineStore("notes", () => {
 		const noteColor = payload.color || "#f7f4ea";
 
 		try {
+			// 1. Generar el vector con el título y contenido
+			const vector = await getEmbeddingVector(
+				`${payload.title || ""} ${payload.content || ""}`,
+			);
+
+			// 2. Insertar incluyendo la columna embedding
 			const [inserted] = await sql`
-            INSERT INTO notes (user_id, title, content, tags, color, is_pinned)
-            VALUES (
-                ${userId}, 
-                ${payload.title || ""}, 
-                ${payload.content || ""}, 
-                ${noteTags}, 
-                ${noteColor}, 
-                ${payload.is_pinned || false}
-            )
-            RETURNING id, created_at, updated_at;
-        `;
+			INSERT INTO notes (user_id, title, content, tags, color, is_pinned, embedding)
+			VALUES (
+				${userId}, 
+				${payload.title || ""}, 
+				${payload.content || ""}, 
+				${noteTags}, 
+				${noteColor}, 
+				${payload.is_pinned || false},
+				${vector}::vector
+			)
+			RETURNING id, created_at, updated_at;
+		`;
 
 			const newNote: Note = {
 				id: inserted.id,
@@ -388,26 +395,19 @@ export const useNotesStore = defineStore("notes", () => {
 
 		loading.value = true;
 		try {
-			const embeddingRes = await ai.models.embedContent({
-				model: EMBEDDING_MODEL,
-				contents: query,
-			});
-
-			const values = embeddingRes.embeddings?.[0]?.values;
-			if (!values) return;
-
-			const queryVector = `[${values.join(",")}]`;
+			const queryVector = await getEmbeddingVector(query);
+			if (!queryVector) return;
 
 			const rows = await sql`
-				SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at,
-						1 - (embedding <=> ${queryVector}::vector) AS similarity
-				FROM notes
-				WHERE user_id = ${getUserId()}
-					AND embedding IS NOT NULL
-					AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
-				ORDER BY similarity DESC
-				LIMIT 10;
-			`;
+			SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at,
+					1 - (embedding <=> ${queryVector}::vector) AS similarity
+			FROM notes
+			WHERE user_id = ${getUserId()}
+				AND embedding IS NOT NULL
+				AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
+			ORDER BY similarity DESC
+			LIMIT 10;
+		`;
 
 			const formattedRows: Note[] = rows.map((n: any) => ({
 				...n,
@@ -421,6 +421,22 @@ export const useNotesStore = defineStore("notes", () => {
 			await fetchNotes();
 		} finally {
 			loading.value = false;
+		}
+	};
+
+	// Helper interno para convertir texto a formato vector
+	const getEmbeddingVector = async (text: string): Promise<string | null> => {
+		if (!text.trim()) return null;
+		try {
+			const res = await ai.models.embedContent({
+				model: EMBEDDING_MODEL,
+				contents: text,
+			});
+			const values = res.embeddings?.[0]?.values;
+			return values ? `[${values.join(",")}]` : null;
+		} catch (err) {
+			console.error("Error al generar embedding:", err);
+			return null;
 		}
 	};
 
@@ -512,6 +528,26 @@ Texto:
 		}
 	};
 
+	// FEAT 9: Auto-Título Inteligente
+	const generateTitle = async (content: string): Promise<string> => {
+		if (!content.trim()) return "";
+
+		aiLoading.value = true;
+		try {
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: `Genera un título muy corto, atractivo y conciso (máximo 5 palabras) en español que resuma el siguiente contenido. Devuelve ÚNICAMENTE el texto del título, sin comillas, sin punto final ni explicaciones adicionales.\n\nContenido: "${content}"`,
+			});
+
+			return response.text?.trim() || "";
+		} catch (err) {
+			console.error("Error al generar título con IA:", err);
+			return "";
+		} finally {
+			aiLoading.value = false;
+		}
+	};
+
 	return {
 		notes,
 		archivedNotes,
@@ -532,5 +568,8 @@ Texto:
 		summarizeDraft,
 		extractActionItems,
 		translateText,
+		generateTitle,
+		getEmbeddingVector,
+		searchQuery,
 	};
 });

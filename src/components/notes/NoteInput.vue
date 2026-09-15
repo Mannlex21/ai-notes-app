@@ -8,6 +8,7 @@ import {
 	Type,
 	Languages,
 	LanguagesIcon,
+	Wand2,
 } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import AiMenuDropdown from "../modals/AiMenuDropdown.vue";
@@ -15,6 +16,7 @@ import AiVariantsModal from "../modals/AiVariantsModal.vue";
 import TagManagerModal from "../modals/TagManagerModal.vue";
 import RichTextEditor from "../notes/RichTextEditor.vue";
 import TranslationModal from "../modals/TranslationModal.vue";
+import { Trash2 } from "lucide-vue-next";
 
 const store = useNotesStore();
 const emit = defineEmits(["save-note"]);
@@ -48,6 +50,12 @@ const adjustTextareaHeight = () => {
 };
 
 watch(content, adjustTextareaHeight);
+watch(isChecklist, (val) => {
+	if (val && content.value.trim()) {
+		processMultilineToChecklist(content.value);
+		content.value = ""; // Limpiar el área de texto plano
+	}
+});
 
 const handleKeyDown = (event: KeyboardEvent) => {
 	if (event.key === "Escape") {
@@ -71,8 +79,34 @@ const openModal = () => {
 	adjustTextareaHeight();
 };
 
-const addChecklistItem = () => {
+// Helper para enfocar el último input disponible
+const focusLastInput = () => {
+	nextTick(() => {
+		const inputs = document.querySelectorAll<HTMLInputElement>(
+			".checklist-item-input",
+		);
+		const lastInput = inputs[inputs.length - 1];
+		if (lastInput) {
+			lastInput.focus();
+		}
+	});
+};
+
+// Agregar una nueva casilla al presionar Enter en un ítem específico
+const addChecklistItem = (currentIndex?: number) => {
+	if (currentIndex !== undefined) {
+		const currentItem = checklistItems.value[currentIndex];
+		if (!currentItem || !currentItem.text.trim()) return;
+	}
+
+	const lastItem = checklistItems.value[checklistItems.value.length - 1];
+	if (lastItem && !lastItem.text.trim()) {
+		focusLastInput();
+		return;
+	}
+
 	checklistItems.value.push({ text: "", done: false });
+	focusLastInput();
 };
 
 const removeChecklistItem = (index: number) => {
@@ -220,6 +254,57 @@ const handleTranslateLanguage = async (targetLanguage: string) => {
 	}
 	showTranslateModal.value = false;
 };
+
+const handleAutoTitle = async () => {
+	if (!content.value.trim()) return;
+
+	const generatedTitle = await store.generateTitle(content.value);
+	if (generatedTitle) {
+		title.value = generatedTitle;
+	}
+};
+
+// Función helper para procesar texto multilínea a checklist
+const processMultilineToChecklist = (rawText: string) => {
+	const lines = rawText
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+
+	if (lines.length > 0) {
+		const newItems = lines.map((text) => ({ text, done: false }));
+		checklistItems.value = [...checklistItems.value, ...newItems];
+	}
+};
+
+// Manejo de pegado multilínea
+const handlePasteToChecklist = (event: ClipboardEvent) => {
+	const pastedText = event.clipboardData?.getData("text");
+
+	if (pastedText && pastedText.includes("\n")) {
+		event.preventDefault();
+
+		const lines = pastedText
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+
+		if (lines.length === 0) return;
+
+		const newItems = lines.map((text) => ({ text, done: false }));
+		const existingItems = checklistItems.value.filter(
+			(item) => item.text.trim().length > 0,
+		);
+
+		checklistItems.value = [
+			...existingItems,
+			...newItems,
+			{ text: "", done: false },
+		];
+
+		focusLastInput();
+	}
+};
 </script>
 
 <template>
@@ -259,13 +344,36 @@ const handleTranslateLanguage = async (targetLanguage: string) => {
 				<div
 					class="shrink-0 pb-3 border-b border-[#d8d3c5] flex items-center justify-between gap-3"
 				>
-					<input
-						v-model="title"
-						type="text"
-						placeholder="Título"
-						class="w-full bg-transparent text-xl font-bold text-[#3d3b37] placeholder-[#8c867a] focus:outline-none"
-						autofocus
-					/>
+					<div class="flex items-center gap-2 mb-2">
+						<!-- Botón Auto-Título a la izquierda (Siempre visible, se activa con texto) -->
+						<button
+							@click="handleAutoTitle"
+							:disabled="
+								store.aiLoading ||
+								!content ||
+								content.replace(/<[^>]*>/g, '').trim()
+									.length === 0
+							"
+							type="button"
+							class="p-1 rounded-md hover:bg-[#e8e3d5] text-[#e06c53] transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed flex items-center justify-center shrink-0"
+							title="Generar título inteligente con IA"
+						>
+							<Wand2
+								:class="[
+									'w-5 h-5 text-[#e06c53] stroke-[2.25]',
+									store.aiLoading ? 'animate-spin' : '',
+								]"
+							/>
+						</button>
+
+						<!-- Input de Título -->
+						<input
+							v-model="title"
+							type="text"
+							placeholder="Título"
+							class="w-full bg-transparent text-lg font-bold text-[#3d3b37] placeholder-[#8c867a] focus:outline-none"
+						/>
+					</div>
 					<button
 						@click="resetForm"
 						class="p-1 rounded-md text-[#8c867a] hover:text-[#3d3b37] hover:bg-[#e8e3d5] transition-colors"
@@ -287,29 +395,39 @@ const handleTranslateLanguage = async (targetLanguage: string) => {
 						<div
 							v-for="(item, index) in checklistItems"
 							:key="index"
-							class="flex items-center gap-2 border-b border-[#d8d3c5] pb-1.5"
+							class="group flex items-center gap-2 my-1.5"
 						>
 							<input
 								type="checkbox"
 								v-model="item.done"
-								class="rounded border-[#d8d3c5] text-[#3d3b37] focus:ring-0"
+								class="rounded border-[#d8d3c5] text-[#e06c53] focus:ring-0 cursor-pointer"
 							/>
+
 							<input
 								type="text"
 								v-model="item.text"
-								placeholder="Elemento de lista"
-								@keydown.enter.prevent="addChecklistItem"
-								class="flex-1 bg-transparent text-sm text-[#3d3b37] placeholder-[#8c867a] focus:outline-none"
+								@paste="handlePasteToChecklist"
+								@keydown.enter.prevent="addChecklistItem(index)"
+								placeholder="Escribe una tarea..."
+								class="checklist-item-input w-full bg-transparent text-sm text-[#3d3b37] placeholder-[#8c867a] focus:outline-none"
+								:class="{
+									'line-through text-[#8c867a]': item.done,
+								}"
 							/>
+
+							<!-- Botón de Borrar (se revela al pasar el cursor o al enfocar) -->
 							<button
+								type="button"
 								@click="removeChecklistItem(index)"
-								class="text-[#8c867a] hover:text-[#e06c53] p-1"
+								class="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 text-[#8c867a] hover:text-[#e06c53] hover:bg-[#e8e3d5] rounded-md transition-all shrink-0"
+								title="Eliminar elemento"
 							>
-								<X class="w-3.5 h-3.5" />
+								<Trash2 class="w-3.5 h-3.5" />
 							</button>
 						</div>
 						<button
-							@click="addChecklistItem"
+							type="button"
+							@click="addChecklistItem()"
 							class="flex items-center gap-1.5 text-xs text-[#8c867a] hover:text-[#3d3b37] font-medium pt-1"
 						>
 							<Plus class="w-3.5 h-3.5" /> Agregar elemento
