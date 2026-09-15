@@ -95,6 +95,7 @@ export const useNotesStore = defineStore("notes", () => {
 			error.value = "Error al crear la nota.";
 		}
 	};
+
 	const updateNote = async (
 		id: string,
 		payload: { title: string; content: string; color?: string },
@@ -270,7 +271,6 @@ export const useNotesStore = defineStore("notes", () => {
 	};
 
 	// FEAT 2: Autocategorización y Etiquetas (JSON estructurado)
-	// En useNotesStore.ts
 	const suggestTagsForText = async (
 		text: string,
 	): Promise<{ tags: string[]; color?: string }> => {
@@ -393,7 +393,6 @@ export const useNotesStore = defineStore("notes", () => {
 				contents: query,
 			});
 
-			// Cambiar embeddingRes.embedding.values por embeddingRes.embeddings[0].values
 			const values = embeddingRes.embeddings?.[0]?.values;
 			if (!values) return;
 
@@ -424,8 +423,8 @@ export const useNotesStore = defineStore("notes", () => {
 			loading.value = false;
 		}
 	};
+
 	// FEAT 6: Resumir Puntos Clave para Borrador (NoteInput)
-	// En useNotesStore.ts
 	const summarizeDraft = async (currentText: string): Promise<string> => {
 		if (!currentText.trim()) return "";
 
@@ -449,6 +448,43 @@ Texto:
 			aiLoading.value = false;
 		}
 	};
+
+	// FEAT 7: Smart Action Items / Extraer Tareas para Checklist
+	const extractActionItems = async (text: string): Promise<string[]> => {
+		if (!text.trim()) return [];
+
+		aiLoading.value = true;
+		try {
+			const response = await ai.models.generateContent({
+				model: GEMINI_MODEL,
+				contents: `Analiza el siguiente texto, identifica compromisos, pendientes, llamadas o acciones a realizar y extráelos como una lista de tareas cortas y concisas en español.\n\nTexto: "${text}"`,
+				config: {
+					responseMimeType: "application/json",
+					responseSchema: {
+						type: "object",
+						properties: {
+							tasks: {
+								type: "array",
+								items: { type: "string" },
+								description:
+									"Lista de tareas accionables extraídas del texto.",
+							},
+						},
+						required: ["tasks"],
+					},
+				},
+			});
+
+			const data = JSON.parse(response.text || "{}");
+			return data.tasks || [];
+		} catch (err) {
+			console.error("Error al extraer tareas con IA:", err);
+			return [];
+		} finally {
+			aiLoading.value = false;
+		}
+	};
+
 	return {
 		notes,
 		archivedNotes,
@@ -467,5 +503,6 @@ Texto:
 		refineStyleOptions,
 		searchNotesSemantics,
 		summarizeDraft,
+		extractActionItems,
 	};
 });

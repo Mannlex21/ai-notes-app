@@ -187,6 +187,19 @@ const handleSummarize = async () => {
 		showStyleModal.value = true;
 	}
 };
+const handleExtractTasks = async () => {
+	if (!content.value.trim()) return;
+
+	const extractedTasks = await store.extractActionItems(content.value);
+
+	if (extractedTasks.length > 0) {
+		checklistItems.value = extractedTasks.map((taskText) => ({
+			text: taskText,
+			done: false,
+		}));
+		isChecklist.value = true;
+	}
+};
 </script>
 
 <template>
@@ -351,6 +364,7 @@ const handleSummarize = async () => {
 							@expand="handleExpandText"
 							@summarize="handleSummarize"
 							@refine="handleRefineStyle"
+							@extract-tasks="handleExtractTasks"
 						/>
 					</div>
 
