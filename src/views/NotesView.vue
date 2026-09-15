@@ -19,7 +19,6 @@ onMounted(() => {
 	configStore.fetchUserConfig();
 });
 
-// Layout dinámico dependiente de la configuración
 const containerLayoutClass = computed(() => {
 	return configStore.currentView === "grid"
 		? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
@@ -35,16 +34,23 @@ const handleSaveModal = async (payload: {
 	id?: string;
 	title: string;
 	content: string;
+	tags: string[];
 	color: string;
 }) => {
 	if (payload.id) {
 		await store.updateNote(payload.id, {
 			title: payload.title,
 			content: payload.content,
+			tags: payload.tags,
 			color: payload.color,
 		});
 	} else {
-		await store.addNote(payload);
+		await store.addNote({
+			title: payload.title,
+			content: payload.content,
+			tags: payload.tags,
+			color: payload.color,
+		});
 	}
 };
 </script>
@@ -54,7 +60,7 @@ const handleSaveModal = async (payload: {
 		<!-- Disparador para crear notas -->
 		<NoteInput @save-note="store.addNote" />
 
-		<!-- Contenedor dinámico (Cuadrícula o Lista) -->
+		<!-- Contenedor dinámico -->
 		<div :class="containerLayoutClass">
 			<NoteCard
 				v-for="note in store.notes"
@@ -67,7 +73,7 @@ const handleSaveModal = async (payload: {
 			/>
 		</div>
 
-		<!-- Modal Reutilizable para Edición -->
+		<!-- Modal Reutilizable -->
 		<NoteModal
 			:is-open="isEditModalOpen"
 			:initial-note="noteToEdit"

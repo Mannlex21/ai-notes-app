@@ -11,6 +11,7 @@ import {
 	Trash2,
 	Undo2,
 	Redo2,
+	Palette,
 } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import AiMenuDropdown from "../modals/AiMenuDropdown.vue";
@@ -19,6 +20,18 @@ import TagManagerModal from "../modals/TagManagerModal.vue";
 import TranslationModal from "../modals/TranslationModal.vue";
 import RichTextEditor from "../notes/RichTextEditor.vue";
 import type { Note } from "../../types";
+import { Sparkles } from "lucide-vue-next";
+
+// Paleta de colores suaves que garantizan contraste con texto oscuro (#2a2926 / #3d3b37)
+const NOTE_COLORS = [
+	{ name: "Papel Crema", hex: "#f2eee3" },
+	{ name: "Amarillo Calido", hex: "#fef3c7" },
+	{ name: "Verde Menta", hex: "#d1fae5" },
+	{ name: "Azul Brisa", hex: "#e0f2fe" },
+	{ name: "Lavanda Suave", hex: "#ede9fe" },
+	{ name: "Rosa Pastel", hex: "#fce7f3" },
+	{ name: "Naranja Melocotón", hex: "#ffedd5" },
+];
 
 const props = defineProps<{
 	isOpen: boolean;
@@ -45,6 +58,7 @@ const title = ref("");
 const content = ref("");
 const isChecklist = ref(false);
 const showToolbar = ref(false);
+const showColorPicker = ref(false);
 const rawHtmlBackup = ref("");
 
 const tags = ref<string[]>([]);
@@ -65,6 +79,7 @@ interface HistoryState {
 	content: string;
 	isChecklist: boolean;
 	checklistItems: { text: string; done: boolean }[];
+	color: string;
 }
 
 const history = ref<HistoryState[]>([]);
@@ -78,14 +93,15 @@ const saveHistoryState = () => {
 		content: content.value,
 		isChecklist: isChecklist.value,
 		checklistItems: JSON.parse(JSON.stringify(checklistItems.value)),
+		color: noteColor.value,
 	};
 
-	// Evitar duplicar el último estado exacto
 	if (historyIndex.value >= 0) {
 		const currentState = history.value[historyIndex.value];
 		if (
 			currentState.content === newState.content &&
 			currentState.isChecklist === newState.isChecklist &&
+			currentState.color === newState.color &&
 			JSON.stringify(currentState.checklistItems) ===
 				JSON.stringify(newState.checklistItems)
 		) {
@@ -93,7 +109,6 @@ const saveHistoryState = () => {
 		}
 	}
 
-	// Si el usuario edita tras deshacer, eliminar estados futuros
 	if (historyIndex.value < history.value.length - 1) {
 		history.value = history.value.slice(0, historyIndex.value + 1);
 	}
@@ -119,6 +134,7 @@ const handleUndo = () => {
 	content.value = state.content;
 	isChecklist.value = state.isChecklist;
 	checklistItems.value = JSON.parse(JSON.stringify(state.checklistItems));
+	noteColor.value = state.color || "#f2eee3";
 
 	nextTick(() => {
 		isHistoryAction.value = false;
@@ -134,27 +150,16 @@ const handleRedo = () => {
 	content.value = state.content;
 	isChecklist.value = state.isChecklist;
 	checklistItems.value = JSON.parse(JSON.stringify(state.checklistItems));
+	noteColor.value = state.color || "#f2eee3";
 
 	nextTick(() => {
 		isHistoryAction.value = false;
 	});
 };
 
-// Escuchar cambios en `content` (RichTextEditor)
-watch(content, () => {
-	saveHistoryState();
-});
+watch(content, () => saveHistoryState());
+watch(checklistItems, () => saveHistoryState(), { deep: true });
 
-// Escuchar cambios en `checklistItems`
-watch(
-	checklistItems,
-	() => {
-		saveHistoryState();
-	},
-	{ deep: true },
-);
-
-// Sincronizar datos al abrir o cambiar `initialNote`
 watch(
 	() => props.isOpen,
 	(open) => {
@@ -176,17 +181,15 @@ watch(
 
 			nextTick(() => {
 				isHistoryAction.value = false;
-				saveHistoryState(); // Guarda estado base inicial
+				saveHistoryState();
 			});
 		}
 	},
 	{ immediate: true },
 );
 
-// Conversión inteligente entre Texto/HTML y Checklist
 watch(isChecklist, (newVal) => {
 	if (newVal) {
-		// --- DE TEXTO/HTML A CHECKLIST ---
 		if (content.value.trim()) {
 			rawHtmlBackup.value = content.value;
 
@@ -213,7 +216,6 @@ watch(isChecklist, (newVal) => {
 			content.value = "";
 		}
 	} else {
-		// --- DE CHECKLIST A TEXTO (HTML) ---
 		const validItems = checklistItems.value.filter(
 			(item) => item.text.trim().length > 0,
 		);
@@ -243,7 +245,6 @@ watch(isChecklist, (newVal) => {
 	saveHistoryState();
 });
 
-// Manejo global de atajos de teclado
 const handleKeyDown = (event: KeyboardEvent) => {
 	if (!props.isOpen) return;
 
@@ -265,6 +266,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
 		if (showTagModal.value) showTagModal.value = false;
 		else if (showStyleModal.value) showStyleModal.value = false;
 		else if (showTranslateModal.value) showTranslateModal.value = false;
+		else if (showColorPicker.value) showColorPicker.value = false;
 		else handleClose();
 	}
 };
@@ -324,8 +326,17 @@ const handleAutoTagAi = async () => {
 	if (result.tags && result.tags.length > 0) {
 		const combined = new Set([...tags.value, ...result.tags]);
 		tags.value = Array.from(combined);
-		if (result.color) noteColor.value = result.color;
+		if (result.color) {
+			noteColor.value = result.color;
+			saveHistoryState();
+		}
 	}
+};
+
+const selectColor = (hex: string) => {
+	noteColor.value = hex;
+	showColorPicker.value = false;
+	saveHistoryState();
 };
 
 const resetForm = () => {
@@ -334,6 +345,7 @@ const resetForm = () => {
 	tags.value = [];
 	noteColor.value = "#f2eee3";
 	isChecklist.value = false;
+	showColorPicker.value = false;
 	showStyleModal.value = false;
 	showTagModal.value = false;
 	showTranslateModal.value = false;
@@ -471,7 +483,6 @@ const handlePasteToChecklist = (event: ClipboardEvent) => {
 	}
 };
 
-// Formateador de fecha legible
 const formattedDate = computed(() => {
 	if (!updatedAt.value) return "";
 	const date = new Date(updatedAt.value);
@@ -505,12 +516,12 @@ const formattedCreatedAt = computed(() => {
 		class="fixed inset-0 z-40 bg-[#2a2926]/15 backdrop-blur-sm flex items-center justify-center p-4"
 	>
 		<div
-			class="border border-[#d8d3c5] rounded-xl p-5 shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col justify-between overflow-hidden transition-colors duration-300"
+			class="border border-[#d8d3c5] rounded-xl p-5 shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col justify-between overflow-hidden transition-colors duration-300 relative"
 			:style="{ backgroundColor: noteColor }"
 		>
 			<!-- Header -->
 			<div
-				class="shrink-0 pb-3 border-b border-[#d8d3c5] flex items-center justify-between gap-3"
+				class="shrink-0 pb-3 border-b border-[#2a2926]/10 flex items-center justify-between gap-3"
 			>
 				<div class="flex items-center gap-2 mb-2 w-full">
 					<button
@@ -521,7 +532,7 @@ const formattedCreatedAt = computed(() => {
 							content.replace(/<[^>]*>/g, '').trim().length === 0
 						"
 						type="button"
-						class="p-1 rounded-md hover:bg-[#e8e3d5] text-[#e06c53] transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed flex items-center justify-center shrink-0"
+						class="p-1 rounded-md hover:bg-[#2a2926]/10 text-[#e06c53] transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed flex items-center justify-center shrink-0"
 						title="Generar título inteligente con IA"
 					>
 						<Wand2
@@ -541,7 +552,7 @@ const formattedCreatedAt = computed(() => {
 				</div>
 				<button
 					@click="handleClose"
-					class="p-1 rounded-md text-[#8c867a] hover:text-[#3d3b37] hover:bg-[#e8e3d5] transition-colors"
+					class="p-1 rounded-md text-[#8c867a] hover:text-[#3d3b37] hover:bg-[#2a2926]/10 transition-colors"
 					title="Cerrar sin guardar"
 				>
 					<X class="w-5 h-5" />
@@ -581,7 +592,7 @@ const formattedCreatedAt = computed(() => {
 						<button
 							type="button"
 							@click="removeChecklistItem(index)"
-							class="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 text-[#8c867a] hover:text-[#e06c53] hover:bg-[#e8e3d5] rounded-md transition-all shrink-0"
+							class="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 text-[#8c867a] hover:text-[#e06c53] hover:bg-[#2a2926]/10 rounded-md transition-all shrink-0"
 							title="Eliminar elemento"
 						>
 							<Trash2 class="w-3.5 h-3.5" />
@@ -600,12 +611,28 @@ const formattedCreatedAt = computed(() => {
 			<!-- Chips de Categorías -->
 			<div class="flex justify-between">
 				<div
-					class="px-1 py-2 flex flex-wrap items-center gap-1.5 border-t border-[#d8d3c5]/60"
+					class="px-1 py-2 flex flex-wrap items-center gap-1.5 border-t border-[#2a2926]/10"
 				>
+					<!-- Botón IA (Primera opción con icono Sparkles) -->
+					<button
+						@click="handleAutoTagAi"
+						:disabled="store.aiLoading || !content.trim()"
+						class="p-1 px-2 text-xs text-[#e06c53] hover:bg-[#2a2926]/10 rounded-md transition-colors flex items-center gap-1 font-medium disabled:opacity-40 disabled:hover:bg-transparent"
+						title="Auto-categorizar con IA"
+					>
+						<Sparkles
+							:class="[
+								'w-3.5 h-3.5 text-[#e06c53]',
+								store.aiLoading ? 'animate-spin' : '',
+							]"
+						/>
+					</button>
+
+					<!-- Tags Existentes -->
 					<span
 						v-for="tag in tags"
 						:key="tag"
-						class="text-[11px] px-2 py-0.5 rounded-full bg-[#e8e3d5] text-[#3d3b37] border border-[#d8d3c5] font-medium flex items-center gap-1"
+						class="text-[11px] px-2 py-0.5 rounded-full bg-[#2a2926]/10 text-[#3d3b37] border border-[#2a2926]/15 font-medium flex items-center gap-1"
 					>
 						#{{ tag }}
 						<button
@@ -616,9 +643,10 @@ const formattedCreatedAt = computed(() => {
 						</button>
 					</span>
 
+					<!-- Botón Agregar Tag Manual -->
 					<button
 						@click="showTagModal = true"
-						class="p-1 text-xs text-[#8c867a] hover:text-[#e06c53] hover:bg-[#e8e3d5] rounded-md transition-colors flex items-center gap-1 font-medium"
+						class="p-1 text-xs text-[#8c867a] hover:text-[#e06c53] hover:bg-[#2a2926]/10 rounded-md transition-colors flex items-center gap-1 font-medium"
 						title="Gestionar categorías"
 					>
 						<Plus class="w-3.5 h-3.5" />
@@ -627,6 +655,7 @@ const formattedCreatedAt = computed(() => {
 						>
 					</button>
 				</div>
+
 				<!-- Fecha de edición -->
 				<div
 					v-if="initialNote && formattedDate"
@@ -643,16 +672,16 @@ const formattedCreatedAt = computed(() => {
 
 			<!-- Footer -->
 			<div
-				class="shrink-0 pt-2 border-t border-[#d8d3c5] flex flex-col gap-2"
+				class="shrink-0 pt-2 border-t border-[#2a2926]/10 flex flex-col gap-2"
 			>
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-1 text-[#8c867a]">
 						<button
 							@click="isChecklist = !isChecklist"
 							:class="[
-								'p-1.5 rounded-md hover:bg-[#e8e3d5] transition-colors',
+								'p-1.5 rounded-md hover:bg-[#2a2926]/10 transition-colors',
 								isChecklist
-									? 'text-[#e06c53] bg-[#e8e3d5]'
+									? 'text-[#e06c53] bg-[#2a2926]/10'
 									: '',
 							]"
 							title="Cambiar formato de lista"
@@ -664,21 +693,57 @@ const formattedCreatedAt = computed(() => {
 							v-if="!isChecklist"
 							@click="showToolbar = !showToolbar"
 							:class="[
-								'p-1.5 rounded-md hover:bg-[#e8e3d5] transition-colors',
+								'p-1.5 rounded-md hover:bg-[#2a2926]/10 transition-colors',
 								showToolbar
-									? 'text-[#e06c53] bg-[#e8e3d5]'
+									? 'text-[#e06c53] bg-[#2a2926]/10'
 									: '',
 							]"
 							title="Herramientas de formato"
 						>
 							<Type class="w-4 h-4" />
 						</button>
+						<!-- Selector de Color -->
+						<div class="relative">
+							<button
+								type="button"
+								@click="showColorPicker = !showColorPicker"
+								:class="[
+									'p-1.5 rounded-md hover:bg-[#2a2926]/10 transition-colors',
+									showColorPicker
+										? 'text-[#e06c53] bg-[#2a2926]/10'
+										: '',
+								]"
+								title="Cambiar color de la nota"
+							>
+								<Palette class="w-4 h-4" />
+							</button>
 
+							<!-- Popover de Colores -->
+							<div
+								v-if="showColorPicker"
+								class="absolute bottom-full left-0 mb-2 p-2 bg-[#f2eee3] border border-[#d8d3c5] rounded-xl shadow-lg flex items-center gap-1.5 z-50"
+							>
+								<button
+									v-for="color in NOTE_COLORS"
+									:key="color.hex"
+									type="button"
+									@click="selectColor(color.hex)"
+									class="w-6 h-6 rounded-full border border-[#2a2926]/20 transition-transform hover:scale-110 flex items-center justify-center shrink-0"
+									:style="{ backgroundColor: color.hex }"
+									:title="color.name"
+								>
+									<span
+										v-if="noteColor === color.hex"
+										class="w-2 h-2 rounded-full bg-[#3d3b37]"
+									></span>
+								</button>
+							</div>
+						</div>
 						<button
 							v-if="!isChecklist"
 							@click="showTranslateModal = true"
 							:disabled="!content.trim() || store.aiLoading"
-							class="p-1.5 rounded-md hover:bg-[#e8e3d5] text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-40 flex items-center gap-1"
+							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-40 flex items-center gap-1"
 							title="Traducir nota"
 						>
 							<Languages class="w-4 h-4" />
@@ -693,13 +758,14 @@ const formattedCreatedAt = computed(() => {
 							@refine="handleRefineStyle"
 							@extract-tasks="handleExtractTasks"
 						/>
-						<div class="h-4 w-[1px] bg-[#d8d3c5] mx-0.5"></div>
+						<div class="h-4 w-[1px] bg-[#2a2926]/10 mx-0.5"></div>
+
 						<!-- Deshacer -->
 						<button
 							type="button"
 							@click="handleUndo"
 							:disabled="!canUndo"
-							class="p-1.5 rounded-md hover:bg-[#e8e3d5] text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
 							title="Deshacer (Ctrl + Z)"
 						>
 							<Undo2 class="w-4 h-4" />
@@ -710,7 +776,7 @@ const formattedCreatedAt = computed(() => {
 							type="button"
 							@click="handleRedo"
 							:disabled="!canRedo"
-							class="p-1.5 rounded-md hover:bg-[#e8e3d5] text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
 							title="Rehacer (Ctrl + Y)"
 						>
 							<Redo2 class="w-4 h-4" />
@@ -735,7 +801,7 @@ const formattedCreatedAt = computed(() => {
 			</div>
 		</div>
 
-		<!-- Sub-modales de IA y Categorías -->
+		<!-- Sub-modales -->
 		<TagManagerModal
 			:is-open="showTagModal"
 			:tags="tags"
@@ -743,7 +809,6 @@ const formattedCreatedAt = computed(() => {
 			@close="showTagModal = false"
 			@add-tag="handleAddTag"
 			@remove-tag="handleRemoveTag"
-			@auto-tag="handleAutoTagAi"
 		/>
 
 		<AiVariantsModal

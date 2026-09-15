@@ -6,7 +6,6 @@ import {
 	Archive,
 	ArchiveRestore,
 	Trash2,
-	Pencil,
 } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import type { Note } from "../../types";
@@ -23,7 +22,21 @@ const emit = defineEmits<{
 const store = useNotesStore();
 
 const handleAutoTag = async () => {
-	await store.suggestTagsForText(props.note.id);
+	if (!props.note.content && !props.note.title) return;
+
+	const fullText = `${props.note.title || ""} ${props.note.content || ""}`;
+	const result = await store.suggestTagsForText(fullText);
+
+	if (result.tags || result.color) {
+		await store.updateNote(props.note.id, {
+			title: props.note.title,
+			content: props.note.content,
+			tags: Array.from(
+				new Set([...(props.note.tags || []), ...(result.tags || [])]),
+			),
+			color: result.color || props.note.color,
+		});
+	}
 };
 </script>
 

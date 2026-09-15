@@ -1,15 +1,14 @@
 <!-- components/modals/TagManagerModal.vue -->
 <script setup lang="ts">
 import { ref } from "vue";
-import { X, Plus, Sparkles, Tag, Check } from "lucide-vue-next";
+import { X, Plus, Tag, Check } from "lucide-vue-next";
 
 defineProps<{
 	isOpen: boolean;
 	tags: string[];
-	isLoadingAi?: boolean;
 }>();
 
-const emit = defineEmits(["close", "add-tag", "remove-tag", "auto-tag"]);
+const emit = defineEmits(["close", "add-tag", "remove-tag"]);
 
 const newTagInput = ref("");
 
@@ -48,22 +47,6 @@ const handleAdd = () => {
 					<X class="w-4 h-4" />
 				</button>
 			</div>
-
-			<!-- Acción con IA -->
-			<button
-				@click="emit('auto-tag')"
-				:disabled="isLoadingAi"
-				class="w-full py-2 px-3 bg-[#e8e3d5] hover:bg-[#dfd9c8] text-[#e06c53] font-medium text-xs rounded-lg transition-colors flex items-center justify-center gap-2 border border-[#d8d3c5] disabled:opacity-50"
-			>
-				<Sparkles
-					:class="['w-4 h-4', isLoadingAi ? 'animate-spin' : '']"
-				/>
-				<span>{{
-					isLoadingAi
-						? "Analizando contenido..."
-						: "Auto-categorizar con IA"
-				}}</span>
-			</button>
 
 			<!-- Agregar manual -->
 			<div class="flex gap-2">

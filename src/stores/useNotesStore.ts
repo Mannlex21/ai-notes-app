@@ -60,15 +60,13 @@ export const useNotesStore = defineStore("notes", () => {
 		if (!userId) return;
 
 		const noteTags = payload.tags || [];
-		const noteColor = payload.color || "#f7f4ea";
+		const noteColor = payload.color || "#f2eee3"; // Color base por defecto
 
 		try {
-			// 1. Generar el vector con el título y contenido
 			const vector = await getEmbeddingVector(
 				`${payload.title || ""} ${payload.content || ""}`,
 			);
 
-			// 2. Insertar incluyendo la columna embedding
 			const [inserted] = await sql`
 			INSERT INTO notes (user_id, title, content, tags, color, is_pinned, embedding)
 			VALUES (
@@ -105,35 +103,43 @@ export const useNotesStore = defineStore("notes", () => {
 
 	const updateNote = async (
 		id: string,
-		payload: { title: string; content: string; color?: string },
+		payload: {
+			title: string;
+			content: string;
+			tags?: string[];
+			color?: string;
+		},
 	) => {
 		const userId = getUserId();
 		if (!userId) return;
 
+		const noteColor = payload.color || "#f2eee3";
+
 		try {
-			// 1. Recalcular el vector con los nuevos datos
 			const vector = await getEmbeddingVector(
 				`${payload.title || ""} ${payload.content || ""}`,
 			);
 
-			// 2. Actualizar incluyendo la columna embedding
 			await sql`
-      UPDATE notes
-      SET title = ${payload.title}, 
-          content = ${payload.content}, 
-          color = ${payload.color || "#f7f4ea"}, 
-          embedding = ${vector}::vector,
-          updated_at = NOW()
-      WHERE id = ${id} AND user_id = ${userId};
-    `;
+			UPDATE notes
+			SET title = ${payload.title}, 
+				content = ${payload.content}, 
+				tags = ${payload.tags || []},
+				color = ${noteColor}, 
+				embedding = ${vector}::vector,
+				updated_at = NOW()
+			WHERE id = ${id} AND user_id = ${userId};
+		`;
 
 			const note =
 				notes.value.find((n) => n.id === id) ||
 				archivedNotes.value.find((n) => n.id === id);
+
 			if (note) {
 				note.title = payload.title;
 				note.content = payload.content;
-				if (payload.color) note.color = payload.color;
+				if (payload.tags) note.tags = payload.tags;
+				note.color = noteColor;
 				note.updated_at = new Date().toISOString();
 			}
 		} catch (err) {
