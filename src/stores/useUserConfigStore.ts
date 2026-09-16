@@ -170,7 +170,32 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 			loading.value = false;
 		}
 	};
+	const toggleView = async () => {
+		const userId = getUserId();
+		if (!userId) return;
 
+		const nextView: ViewMode =
+			currentView.value === "grid" ? "list" : "grid";
+		const previousView = currentView.value;
+
+		// Actualización optimista en la UI
+		currentView.value = nextView;
+
+		try {
+			await sql`
+				INSERT INTO user_settings (user_id, default_view, updated_at)
+				VALUES (${userId}, ${nextView}, NOW())
+				ON CONFLICT (user_id) 
+				DO UPDATE SET 
+					default_view = ${nextView},
+					updated_at = NOW();
+			`;
+		} catch (err) {
+			console.error("Error al actualizar la vista en Neon:", err);
+			currentView.value = previousView; // Revertir si falla
+			error.value = "No se pudo guardar la preferencia de vista.";
+		}
+	};
 	return {
 		currentView,
 		aiProvider,
@@ -185,5 +210,6 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 		fetchUserConfig,
 		incrementPromptUsage,
 		saveAiSettings,
+		toggleView,
 	};
 });
