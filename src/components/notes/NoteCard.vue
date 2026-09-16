@@ -1,11 +1,13 @@
-<!-- components/notes/NoteCard.vue -->
 <script setup lang="ts">
+import { computed } from "vue";
 import {
 	Sparkles,
 	Pin,
 	Archive,
 	ArchiveRestore,
 	Trash2,
+	CheckSquare,
+	Square,
 } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import type { Note } from "../../types";
@@ -22,6 +24,25 @@ const emit = defineEmits<{
 
 const notesStore = useNotesStore();
 const aiStore = useAiStore();
+
+// Parsea las líneas con sintaxis [ ] o [x]
+const checklistItems = computed(() => {
+	if (!props.note.content) return [];
+	const lines = props.note.content
+		.split("\n")
+		.filter((l) => l.trim().length > 0);
+	const isList = lines.some((line) => /^\[[ x]\]/i.test(line.trim()));
+
+	if (!isList) return [];
+
+	return lines.map((line) => {
+		const isDone = /^\[x\]/i.test(line.trim());
+		const text = line.replace(/^\[[ x]\]\s*/i, "");
+		return { text, done: isDone };
+	});
+});
+
+const isChecklist = computed(() => checklistItems.value.length > 0);
 
 const handleAutoTag = async () => {
 	if (!props.note.content && !props.note.title) return;
@@ -60,10 +81,40 @@ const handleAutoTag = async () => {
 
 		<!-- Contenido de la nota -->
 		<div class="pr-6">
-			<h3 class="font-semibold text-[#2a2926] mb-1">
+			<h3 class="font-semibold text-[#2a2926] mb-2">
 				{{ note.title || "Sin título" }}
 			</h3>
+
+			<!-- Renderizado de Checklist -->
 			<div
+				v-if="isChecklist"
+				class="space-y-1.5 text-xs text-[#59554d] line-clamp-6"
+			>
+				<div
+					v-for="(item, index) in checklistItems"
+					:key="index"
+					class="flex items-start gap-2"
+				>
+					<CheckSquare
+						v-if="item.done"
+						class="w-3.5 h-3.5 text-[#e06c53] shrink-0 mt-0.5"
+					/>
+					<Square
+						v-else
+						class="w-3.5 h-3.5 text-[#8c867a] shrink-0 mt-0.5"
+					/>
+					<span
+						:class="{ 'line-through text-[#8c867a]': item.done }"
+						class="leading-tight"
+					>
+						{{ item.text }}
+					</span>
+				</div>
+			</div>
+
+			<!-- Renderizado de Texto Enriquecido Normal -->
+			<div
+				v-else
 				class="text-xs text-[#59554d] leading-relaxed line-clamp-4 prose prose-sm max-w-none"
 				v-html="note.content"
 			></div>

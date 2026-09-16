@@ -32,7 +32,7 @@ const isPublicPage = computed(() => !!route.meta.hideLayout);
 		<div class="flex flex-1 relative overflow-hidden">
 			<Sidebar :is-open="isSidebarOpen" @close="isSidebarOpen = false" />
 			<main
-				class="flex-1 p-4 sm:p-6 max-w-7xl mx-auto w-full overflow-y-auto"
+				class="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto w-full overflow-y-auto"
 			>
 				<RouterView />
 			</main>

@@ -172,11 +172,45 @@ watch(
 
 			if (props.initialNote) {
 				title.value = props.initialNote.title || "";
-				content.value = props.initialNote.content || "";
+				const rawContent = props.initialNote.content || "";
 				tags.value = [...(props.initialNote.tags || [])];
 				noteColor.value = props.initialNote.color || "#f2eee3";
 				createdAt.value = props.initialNote.created_at || null;
 				updatedAt.value = props.initialNote.updated_at || null;
+
+				// 1. Convertir estructuras de bloque HTML (<p>, <br>, <li>, <div>) en saltos de línea reales
+				const cleanText = rawContent
+					.replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+					.replace(/<br\s*[\/]?>/gi, "\n")
+					.replace(/<[^>]+>/g, "") // Eliminar etiquetas restantes (<b>, <i>, <span>, etc.)
+					.replace(/&nbsp;/g, " ")
+					.replace(/&amp;/g, "&")
+					.replace(/&lt;/g, "<")
+					.replace(/&gt;/g, ">");
+
+				// 2. Extraer líneas limpias
+				const lines = cleanText
+					.split(/\r?\n/)
+					.map((line) => line.trim())
+					.filter((line) => line.length > 0);
+
+				// 3. Detectar si contiene sintaxis explícita de checklist o viñetas
+				const hasChecklistFormat = lines.some((line) =>
+					/^(\[[ x]\]|[-•*])/i.test(line),
+				);
+
+				if (hasChecklistFormat) {
+					isChecklist.value = true;
+					checklistItems.value = lines.map((line) => ({
+						text: line.replace(/^(\[[ x]\]|[-•*])\s*/i, ""),
+						done: /^\[x\]/i.test(line),
+					}));
+					content.value = "";
+				} else {
+					isChecklist.value = false;
+					content.value = rawContent;
+					checklistItems.value = [{ text: "", done: false }];
+				}
 			} else {
 				resetForm();
 			}
@@ -464,27 +498,56 @@ const handleAutoTitle = async () => {
 	if (generatedTitle) title.value = generatedTitle;
 };
 
-const handlePasteToChecklist = (event: ClipboardEvent) => {
-	const pastedText = event.clipboardData?.getData("text");
-	if (pastedText && pastedText.includes("\n")) {
+// Función para limpiar e interpretar código HTML pegado o texto formateado
+const parseHtmlOrTextToLines = (rawText: string): string[] => {
+	// Reemplazar saltos de bloque HTML por saltos de línea reales
+	const parsed = rawText
+		.replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+		.replace(/<br\s*[\/]?>/gi, "\n")
+		.replace(/<[^>]+>/g, "") // Eliminar etiquetas restantes (<b>, <i>, etc.)
+		.replace(/&nbsp;/g, " ")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">");
+
+	return parsed
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+};
+
+const handleGlobalPaste = (event: ClipboardEvent) => {
+	const pastedData =
+		event.clipboardData?.getData("text/html") ||
+		event.clipboardData?.getData("text/plain");
+	if (!pastedData) return;
+
+	const containsHtmlTags = /<[a-z][\s\S]*>/i.test(pastedData);
+	const lines = parseHtmlOrTextToLines(pastedData);
+
+	// Cambiado: evalúa estricta y únicamente [ ] o [x]
+	const hasListSyntax = lines.some((line) => /^\[[ x]\]/i.test(line));
+
+	if (containsHtmlTags || hasListSyntax) {
 		event.preventDefault();
-		const lines = pastedText
-			.split(/\r?\n/)
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0);
 
-		if (lines.length === 0) return;
-		const newItems = lines.map((text) => ({ text, done: false }));
-		const existingItems = checklistItems.value.filter(
-			(item) => item.text.trim().length > 0,
-		);
-
-		checklistItems.value = [
-			...existingItems,
-			...newItems,
-			{ text: "", done: false },
-		];
-		focusLastInput();
+		if (hasListSyntax) {
+			isChecklist.value = true;
+			checklistItems.value = lines.map((line) => ({
+				text: line.replace(/^\[[ x]\]\s*/i, ""),
+				done: /^\[x\]/i.test(line),
+			}));
+			content.value = "";
+		} else {
+			if (isChecklist.value) {
+				checklistItems.value = lines.map((text) => ({
+					text,
+					done: false,
+				}));
+			} else {
+				content.value = lines.map((line) => `<p>${line}</p>`).join("");
+			}
+		}
 	}
 };
 
@@ -565,7 +628,10 @@ const formattedCreatedAt = computed(() => {
 			</div>
 
 			<!-- Body -->
-			<div class="flex-1 overflow-y-auto my-3 pr-1">
+			<div
+				class="flex-1 overflow-y-auto my-3 pr-1"
+				@paste="handleGlobalPaste"
+			>
 				<RichTextEditor
 					v-if="!isChecklist"
 					v-model="content"
@@ -586,7 +652,6 @@ const formattedCreatedAt = computed(() => {
 						<input
 							type="text"
 							v-model="item.text"
-							@paste="handlePasteToChecklist"
 							@keydown.enter.prevent="addChecklistItem(index)"
 							placeholder="Escribe una tarea..."
 							class="checklist-item-input w-full bg-transparent text-sm text-[#3d3b37] placeholder-[#8c867a] focus:outline-none"
@@ -615,7 +680,7 @@ const formattedCreatedAt = computed(() => {
 
 			<!-- Chips de Categorías -->
 			<div
-				class="pt-2.5 pb-1 border-t border-[#2a2926]/10 flex items-center justify-between gap-2 w-full"
+				class="pt-2 pb-2 border-t border-[#2a2926]/10 flex items-center justify-between gap-2 w-full"
 			>
 				<div class="flex flex-wrap items-center gap-1.5">
 					<!-- Botón IA (Primera opción con icono Sparkles) -->
@@ -675,16 +740,19 @@ const formattedCreatedAt = computed(() => {
 				</div>
 			</div>
 
-			<!-- Footer -->
+			<!-- Footer con carrusel enmascarado y botones de acción fijos -->
 			<div
-				class="shrink-0 pt-2 border-t border-[#2a2926]/10 flex flex-col gap-2"
+				class="pt-3 border-t border-[#2a2926]/10 flex items-center justify-between gap-2 overflow-hidden"
 			>
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-1 text-[#8c867a]">
+				<!-- Contenedor del carrusel con máscara de desvanecido a la derecha -->
+				<div class="relative flex-1 min-w-0">
+					<div
+						class="flex items-center gap-1 overflow-x-auto scrollbar-none py-1 pr-4 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)]"
+					>
 						<button
 							@click="isChecklist = !isChecklist"
 							:class="[
-								'p-1.5 rounded-md hover:bg-[#2a2926]/10 transition-colors',
+								'p-1.5 rounded-md hover:bg-[#2a2926]/10 transition-colors shrink-0',
 								isChecklist
 									? 'text-[#e06c53] bg-[#2a2926]/10'
 									: '',
@@ -698,7 +766,7 @@ const formattedCreatedAt = computed(() => {
 							v-if="!isChecklist"
 							@click="showToolbar = !showToolbar"
 							:class="[
-								'p-1.5 rounded-md hover:bg-[#2a2926]/10 transition-colors',
+								'p-1.5 rounded-md hover:bg-[#2a2926]/10 transition-colors shrink-0',
 								showToolbar
 									? 'text-[#e06c53] bg-[#2a2926]/10'
 									: '',
@@ -707,8 +775,9 @@ const formattedCreatedAt = computed(() => {
 						>
 							<Type class="w-4 h-4" />
 						</button>
+
 						<!-- Selector de Color -->
-						<div class="relative">
+						<div class="relative shrink-0">
 							<button
 								type="button"
 								@click="showColorPicker = !showColorPicker"
@@ -744,11 +813,12 @@ const formattedCreatedAt = computed(() => {
 								</button>
 							</div>
 						</div>
+
 						<button
 							v-if="!isChecklist"
 							@click="showTranslateModal = true"
 							:disabled="!content.trim() || notesStore.aiLoading"
-							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-40 flex items-center gap-1"
+							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-40 flex items-center gap-1 shrink-0"
 							title="Traducir nota"
 						>
 							<Languages class="w-4 h-4" />
@@ -758,19 +828,23 @@ const formattedCreatedAt = computed(() => {
 							v-if="!isChecklist"
 							:is-loading="notesStore.aiLoading"
 							:disabled="!content.trim()"
+							class="shrink-0"
 							@expand="handleExpandText"
 							@summarize="handleSummarize"
 							@refine="handleRefineStyle"
 							@extract-tasks="handleExtractTasks"
 						/>
-						<div class="h-4 w-[1px] bg-[#2a2926]/10 mx-0.5"></div>
+
+						<div
+							class="h-4 w-[1px] bg-[#2a2926]/10 mx-0.5 shrink-0"
+						></div>
 
 						<!-- Deshacer -->
 						<button
 							type="button"
 							@click="handleUndo"
 							:disabled="!canUndo"
-							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed shrink-0"
 							title="Deshacer (Ctrl + Z)"
 						>
 							<Undo2 class="w-4 h-4" />
@@ -781,27 +855,28 @@ const formattedCreatedAt = computed(() => {
 							type="button"
 							@click="handleRedo"
 							:disabled="!canRedo"
-							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed shrink-0"
 							title="Rehacer (Ctrl + Y)"
 						>
 							<Redo2 class="w-4 h-4" />
 						</button>
 					</div>
+				</div>
 
-					<div class="flex items-center gap-2">
-						<button
-							@click="handleClose"
-							class="px-3 py-1.5 text-xs text-[#8c867a] hover:text-[#3d3b37] transition-colors"
-						>
-							Cancelar
-						</button>
-						<button
-							@click="handleSave"
-							class="px-4 py-1.5 bg-[#3d3b37] text-[#f7f4ea] text-xs font-medium rounded-lg hover:bg-[#2a2926] transition-colors shadow-sm"
-						>
-							Guardar
-						</button>
-					</div>
+				<!-- Botones de Acción Fijos (Derecha) -->
+				<div class="flex items-center gap-2 shrink-0 pl-1">
+					<button
+						@click="handleClose"
+						class="px-3 py-1.5 text-xs text-[#8c867a] hover:text-[#3d3b37] transition-colors"
+					>
+						Cancelar
+					</button>
+					<button
+						@click="handleSave"
+						class="px-4 py-1.5 bg-[#3d3b37] text-[#f7f4ea] text-xs font-medium rounded-lg hover:bg-[#2a2926] transition-colors shadow-sm"
+					>
+						Guardar
+					</button>
 				</div>
 			</div>
 		</div>

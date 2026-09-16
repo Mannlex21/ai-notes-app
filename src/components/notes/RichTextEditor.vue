@@ -12,8 +12,6 @@ import {
 	Heading1,
 	Heading2,
 	Quote,
-	Undo,
-	Redo,
 } from "lucide-vue-next";
 
 const props = withDefaults(
@@ -33,7 +31,7 @@ const editor = useEditor({
 	extensions: [StarterKit],
 	editorProps: {
 		attributes: {
-			class: "focus:outline-none min-h-[140px] text-sm leading-relaxed text-[#3d3b37] prose prose-sm max-w-none py-2",
+			class: "focus:outline-none min-h-[140px] text-sm leading-[1.25] text-[#3d3b37] prose prose-sm max-w-none py-2",
 		},
 	},
 	onUpdate: () => {
@@ -192,28 +190,6 @@ onBeforeUnmount(() => {
 				title="Cita"
 			>
 				<Quote class="w-3.5 h-3.5" />
-			</button>
-
-			<div class="h-4 w-[1px] bg-[#d8d3c5] mx-1"></div>
-
-			<button
-				type="button"
-				@click="editor.chain().focus().undo().run()"
-				:disabled="!editor.can().undo()"
-				class="p-1.5 rounded-md hover:bg-[#e8e3d5] hover:text-[#3d3b37] transition-colors disabled:opacity-40"
-				title="Deshacer"
-			>
-				<Undo class="w-3.5 h-3.5" />
-			</button>
-
-			<button
-				type="button"
-				@click="editor.chain().focus().redo().run()"
-				:disabled="!editor.can().redo()"
-				class="p-1.5 rounded-md hover:bg-[#e8e3d5] hover:text-[#3d3b37] transition-colors disabled:opacity-40"
-				title="Rehacer"
-			>
-				<Redo class="w-3.5 h-3.5" />
 			</button>
 		</div>
 
