@@ -11,7 +11,7 @@ export const useNotesStore = defineStore("notes", () => {
 	const searchQuery = ref("");
 	const archivedNotes = ref<Note[]>([]);
 	const loading = ref(false);
-	const aiLoading = ref(false);
+	const isLoading = ref(false);
 	const error = ref<string | null>(null);
 
 	const authStore = useAuthStore();
@@ -51,6 +51,55 @@ export const useNotesStore = defineStore("notes", () => {
 		} catch (err) {
 			console.error("Error al obtener notas:", err);
 			error.value = "No se pudieron cargar las notas.";
+		} finally {
+			loading.value = false;
+		}
+	};
+	const searchNotes = async (query: string) => {
+		const userId = getUserId();
+		if (!userId) return;
+
+		if (!query.trim()) {
+			return await fetchNotes();
+		}
+
+		loading.value = true;
+		error.value = null;
+
+		try {
+			// Usamos ILIKE para búsqueda insensible a mayúsculas/minúsculas
+			// Opcional: %${query}% para buscar en título o contenido
+			const searchTerm = `%${query.trim()}%`;
+
+			const rows = await sql`
+			SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at
+			FROM notes
+			WHERE user_id = ${userId}
+			  AND is_archived = false
+			  AND (
+				title ILIKE ${searchTerm}
+				OR content ILIKE ${searchTerm}
+				OR EXISTS (
+					SELECT 1 FROM unnest(tags) tag 
+					WHERE tag ILIKE ${searchTerm}
+				)
+			  )
+			ORDER BY is_pinned DESC, created_at DESC;
+		`;
+
+			const formattedRows: Note[] = rows.map((n: any) => ({
+				...n,
+				tags: n.tags || [],
+				color: n.color || "#f7f4ea",
+				is_pinned: Boolean(n.is_pinned),
+				is_archived: Boolean(n.is_archived),
+			}));
+
+			notes.value = formattedRows;
+		} catch (err) {
+			console.error("Error al buscar notas:", err);
+			error.value =
+				"No se pudieron obtener los resultados de la búsqueda.";
 		} finally {
 			loading.value = false;
 		}
@@ -254,7 +303,7 @@ export const useNotesStore = defineStore("notes", () => {
 		notes,
 		archivedNotes,
 		loading,
-		aiLoading,
+		isLoading,
 		error,
 		fetchNotes,
 		addNote,
@@ -263,5 +312,6 @@ export const useNotesStore = defineStore("notes", () => {
 		toggleArchiveNote,
 		deleteNote,
 		searchQuery,
+		searchNotes,
 	};
 });

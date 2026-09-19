@@ -12,18 +12,19 @@ import {
 	Undo2,
 	Redo2,
 	Palette,
+	Sparkles,
 } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
+import { useAiStore } from "../../stores/useAiStore.ts";
+import { useToastStore } from "../../stores/useToastStore";
 import AiMenuDropdown from "../modals/AiMenuDropdown.vue";
 import AiVariantsModal from "../modals/AiVariantsModal.vue";
 import TagManagerModal from "../modals/TagManagerModal.vue";
 import TranslationModal from "../modals/TranslationModal.vue";
 import RichTextEditor from "../notes/RichTextEditor.vue";
 import type { Note } from "../../types";
-import { Sparkles } from "lucide-vue-next";
-import { useAiStore } from "../../stores/useAiStore.ts";
+import { getErrorMessage } from "../../utils/getErrorMessage.ts";
 
-// Paleta de colores suaves que garantizan contraste con texto oscuro (#2a2926 / #3d3b37)
 const NOTE_COLORS = [
 	{ name: "Papel Crema", hex: "#f2eee3" },
 	{ name: "Amarillo Calido", hex: "#fef3c7" },
@@ -55,6 +56,7 @@ const emit = defineEmits<{
 
 const notesStore = useNotesStore();
 const aiStore = useAiStore();
+const toast = useToastStore();
 
 const title = ref("");
 const content = ref("");
@@ -62,6 +64,7 @@ const isChecklist = ref(false);
 const showToolbar = ref(false);
 const showColorPicker = ref(false);
 const rawHtmlBackup = ref("");
+const isAiBusy = computed(() => aiStore.aiLoading || notesStore.isLoading);
 
 const tags = ref<string[]>([]);
 const createdAt = ref<string | Date | null>(null);
@@ -178,23 +181,20 @@ watch(
 				createdAt.value = props.initialNote.created_at || null;
 				updatedAt.value = props.initialNote.updated_at || null;
 
-				// 1. Convertir estructuras de bloque HTML (<p>, <br>, <li>, <div>) en saltos de línea reales
 				const cleanText = rawContent
 					.replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
 					.replace(/<br\s*[\/]?>/gi, "\n")
-					.replace(/<[^>]+>/g, "") // Eliminar etiquetas restantes (<b>, <i>, <span>, etc.)
+					.replace(/<[^>]+>/g, "")
 					.replace(/&nbsp;/g, " ")
 					.replace(/&amp;/g, "&")
 					.replace(/&lt;/g, "<")
 					.replace(/&gt;/g, ">");
 
-				// 2. Extraer líneas limpias
 				const lines = cleanText
 					.split(/\r?\n/)
 					.map((line) => line.trim())
 					.filter((line) => line.length > 0);
 
-				// 3. Detectar si contiene sintaxis explícita de checklist o viñetas
 				const hasChecklistFormat = lines.some((line) =>
 					/^(\[[ x]\]|[-•*])/i.test(line),
 				);
@@ -349,24 +349,13 @@ const removeChecklistItem = (index: number) => {
 };
 
 const handleAddTag = (tag: string) => {
-	if (!tags.value.includes(tag)) tags.value.push(tag);
+	if (!tags.value.includes(tag)) {
+		tags.value.push(tag);
+	}
 };
 
 const handleRemoveTag = (tagToRemove: string) => {
 	tags.value = tags.value.filter((t) => t !== tagToRemove);
-};
-
-const handleAutoTagAi = async () => {
-	if (!content.value.trim()) return;
-	const result = await aiStore.suggestTagsForText(content.value);
-	if (result.tags && result.tags.length > 0) {
-		const combined = new Set([...tags.value, ...result.tags]);
-		tags.value = Array.from(combined);
-		if (result.color) {
-			noteColor.value = result.color;
-			saveHistoryState();
-		}
-	}
 };
 
 const selectColor = (hex: string) => {
@@ -400,6 +389,7 @@ const handleSave = () => {
 	);
 
 	if (!hasTitle && !hasContent && validChecklist.length === 0) {
+		toast.warning("No se guardó la nota porque estaba vacía");
 		handleClose();
 		return;
 	}
@@ -419,92 +409,27 @@ const handleSave = () => {
 		color: noteColor.value,
 	});
 
+	if (props.initialNote?.id) {
+		toast.success("Nota actualizada exitosamente");
+	} else {
+		toast.success("Nota creada exitosamente");
+	}
+
 	handleClose();
-};
-
-const handleExpandText = async () => {
-	if (!content.value.trim()) return;
-	const expanded = await aiStore.expandText(content.value);
-	if (expanded) {
-		if (
-			expanded
-				.toLowerCase()
-				.startsWith(content.value.trim().toLowerCase())
-		) {
-			content.value = expanded;
-		} else {
-			const needsSpace =
-				!content.value.endsWith(" ") &&
-				!expanded.startsWith(" ") &&
-				!expanded.startsWith(",");
-			content.value = `${content.value}${needsSpace ? " " : ""}${expanded}`;
-		}
-		saveHistoryState();
-	}
-};
-
-const handleRefineStyle = async (tone: "formal" | "conciso" | "casual") => {
-	if (!content.value.trim()) return;
-	const options = await aiStore.refineStyleOptions(content.value, tone);
-	if (options && options.length > 0) {
-		styleVariants.value = options;
-		showStyleModal.value = true;
-	}
 };
 
 const selectVariant = (selectedText: string) => {
 	content.value = selectedText;
 	showStyleModal.value = false;
 	saveHistoryState();
+	toast.success("Variación seleccionada aplicada");
 };
 
-const handleSummarize = async () => {
-	if (!content.value.trim()) return;
-	const summaryResult = await aiStore.summarizeDraft(content.value);
-	if (summaryResult) {
-		styleVariants.value = [summaryResult];
-		showStyleModal.value = true;
-	}
-};
-
-const handleExtractTasks = async () => {
-	if (!content.value.trim()) return;
-	const extractedTasks = await aiStore.extractActionItems(content.value);
-	if (extractedTasks.length > 0) {
-		checklistItems.value = extractedTasks.map((taskText) => ({
-			text: taskText,
-			done: false,
-		}));
-		isChecklist.value = true;
-	}
-};
-
-const handleTranslateLanguage = async (targetLanguage: string) => {
-	if (!content.value.trim()) return;
-	const translated = await aiStore.translateText(
-		content.value,
-		targetLanguage,
-	);
-	if (translated) {
-		content.value = translated;
-		saveHistoryState();
-	}
-	showTranslateModal.value = false;
-};
-
-const handleAutoTitle = async () => {
-	if (!content.value.trim()) return;
-	const generatedTitle = await aiStore.generateTitle(content.value);
-	if (generatedTitle) title.value = generatedTitle;
-};
-
-// Función para limpiar e interpretar código HTML pegado o texto formateado
 const parseHtmlOrTextToLines = (rawText: string): string[] => {
-	// Reemplazar saltos de bloque HTML por saltos de línea reales
 	const parsed = rawText
 		.replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
 		.replace(/<br\s*[\/]?>/gi, "\n")
-		.replace(/<[^>]+>/g, "") // Eliminar etiquetas restantes (<b>, <i>, etc.)
+		.replace(/<[^>]+>/g, "")
 		.replace(/&nbsp;/g, " ")
 		.replace(/&amp;/g, "&")
 		.replace(/&lt;/g, "<")
@@ -524,8 +449,6 @@ const handleGlobalPaste = (event: ClipboardEvent) => {
 
 	const containsHtmlTags = /<[a-z][\s\S]*>/i.test(pastedData);
 	const lines = parseHtmlOrTextToLines(pastedData);
-
-	// Cambiado: evalúa estricta y únicamente [ ] o [x]
 	const hasListSyntax = lines.some((line) => /^\[[ x]\]/i.test(line));
 
 	if (containsHtmlTags || hasListSyntax) {
@@ -576,6 +499,195 @@ const formattedCreatedAt = computed(() => {
 		minute: "2-digit",
 	}).format(date);
 });
+
+const handleAutoTagAi = async () => {
+	if (!content.value.trim()) {
+		toast.warning("Agrega contenido a la nota para sugerir etiquetas");
+		return;
+	}
+	try {
+		const result = await aiStore.suggestTagsForText(content.value);
+		if (result.tags && result.tags.length > 0) {
+			const combined = new Set([...tags.value, ...result.tags]);
+			tags.value = Array.from(combined);
+			if (result.color) {
+				noteColor.value = result.color;
+				saveHistoryState();
+			}
+			toast.success("Categorías sugeridas aplicadas con éxito");
+		} else {
+			toast.info("No se hallaron categorías adicionales");
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"Ocurrió un fallo al analizar el contenido con IA para extraer etiquetas.",
+			),
+		);
+	}
+};
+
+const handleExpandText = async () => {
+	if (!content.value.trim()) {
+		toast.warning("El texto está vacío para ser expandido");
+		return;
+	}
+	try {
+		const expanded = await aiStore.expandText(content.value);
+		if (expanded) {
+			if (
+				expanded
+					.toLowerCase()
+					.startsWith(content.value.trim().toLowerCase())
+			) {
+				content.value = expanded;
+			} else {
+				const needsSpace =
+					!content.value.endsWith(" ") &&
+					!expanded.startsWith(" ") &&
+					!expanded.startsWith(",");
+				content.value = `${content.value}${needsSpace ? " " : ""}${expanded}`;
+			}
+			saveHistoryState();
+			toast.success("Texto expandido con IA");
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"No fue posible generar una expansión del borrador en este momento.",
+			),
+		);
+	}
+};
+
+const handleRefineStyle = async (tone: "formal" | "conciso" | "casual") => {
+	if (!content.value.trim()) {
+		toast.warning("Escribe algo de texto antes de reescribir");
+		return;
+	}
+	try {
+		const options = await aiStore.refineStyleOptions(content.value, tone);
+		if (options && options.length > 0) {
+			styleVariants.value = options;
+			showStyleModal.value = true;
+		} else {
+			toast.info("No se generaron variaciones para esta opción");
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				`Hubo un problema al intentar generar variaciones en tono ${tone}.`,
+			),
+		);
+	}
+};
+
+const handleSummarize = async () => {
+	if (!content.value.trim()) {
+		toast.warning("No hay contenido suficiente para resumir");
+		return;
+	}
+	try {
+		const summaryResult = await aiStore.summarizeDraft(content.value);
+		if (summaryResult) {
+			styleVariants.value = [summaryResult];
+			showStyleModal.value = true;
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"No se pudo procesar el resumen del contenido introducido.",
+			),
+		);
+	}
+};
+
+const handleExtractTasks = async () => {
+	if (!content.value.trim()) {
+		toast.warning("No se encontró texto para extraer tareas");
+		return;
+	}
+	try {
+		const extractedTasks = await aiStore.extractActionItems(content.value);
+		if (extractedTasks.length > 0) {
+			checklistItems.value = extractedTasks.map((taskText) => ({
+				text: taskText,
+				done: false,
+			}));
+			isChecklist.value = true;
+			toast.success(
+				`Se extrajeron ${extractedTasks.length} tareas pendientes`,
+			);
+		} else {
+			toast.info("No se identificaron tareas concretas en el texto");
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"Ocurrió un error al identificar ítems de acción con el asistente de IA.",
+			),
+		);
+	}
+};
+
+const handleTranslateLanguage = async (targetLanguage: string) => {
+	if (!content.value.trim()) {
+		toast.warning("El texto está vacío para traducir");
+		return;
+	}
+	try {
+		const translated = await aiStore.translateText(
+			content.value,
+			targetLanguage,
+		);
+		if (translated) {
+			content.value = translated;
+			saveHistoryState();
+			toast.success(`Nota traducida a ${targetLanguage}`);
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				`No fue posible traducir el texto al idioma ${targetLanguage}.`,
+			),
+		);
+	}
+	showTranslateModal.value = false;
+};
+
+const handleAutoTitle = async () => {
+	if (!content.value.trim()) {
+		toast.warning("Escribe algo en la nota para generar un título");
+		return;
+	}
+	try {
+		const generatedTitle = await aiStore.generateTitle(content.value);
+		if (generatedTitle) {
+			title.value = generatedTitle;
+			toast.success("Título generado automáticamente");
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"No se pudo generar una sugerencia de título a partir del contenido de la nota.",
+			),
+		);
+	}
+};
 </script>
 
 <template>
@@ -595,7 +707,7 @@ const formattedCreatedAt = computed(() => {
 					<button
 						@click="handleAutoTitle"
 						:disabled="
-							notesStore.aiLoading ||
+							isAiBusy ||
 							!content ||
 							content.replace(/<[^>]*>/g, '').trim().length === 0
 						"
@@ -606,7 +718,7 @@ const formattedCreatedAt = computed(() => {
 						<Wand2
 							:class="[
 								'w-5 h-5 text-[#e06c53] stroke-[2.25]',
-								notesStore.aiLoading ? 'animate-spin' : '',
+								isAiBusy ? 'animate-spin' : '',
 							]"
 						/>
 					</button>
@@ -683,22 +795,20 @@ const formattedCreatedAt = computed(() => {
 				class="pt-2 pb-2 border-t border-[#2a2926]/10 flex items-center justify-between gap-2 w-full"
 			>
 				<div class="flex flex-wrap items-center gap-1.5">
-					<!-- Botón IA (Primera opción con icono Sparkles) -->
 					<button
 						@click="handleAutoTagAi"
-						:disabled="notesStore.aiLoading || !content.trim()"
+						:disabled="isAiBusy || !content.trim()"
 						class="p-1 px-2 text-xs text-[#e06c53] hover:bg-[#2a2926]/10 rounded-md transition-colors flex items-center gap-1 font-medium disabled:opacity-40 disabled:hover:bg-transparent"
 						title="Auto-categorizar con IA"
 					>
 						<Sparkles
 							:class="[
 								'w-3.5 h-3.5 text-[#e06c53]',
-								notesStore.aiLoading ? 'animate-spin' : '',
+								isAiBusy ? 'animate-spin' : '',
 							]"
 						/>
 					</button>
 
-					<!-- Tags Existentes -->
 					<span
 						v-for="tag in tags"
 						:key="tag"
@@ -713,7 +823,6 @@ const formattedCreatedAt = computed(() => {
 						</button>
 					</span>
 
-					<!-- Botón Agregar Tag Manual -->
 					<button
 						@click="showTagModal = true"
 						class="p-1 text-xs text-[#8c867a] hover:text-[#e06c53] hover:bg-[#2a2926]/10 rounded-md transition-colors flex items-center gap-1 font-medium"
@@ -726,7 +835,6 @@ const formattedCreatedAt = computed(() => {
 					</button>
 				</div>
 
-				<!-- Fecha de edición -->
 				<div
 					v-if="initialNote && formattedDate"
 					class="text-right text-[11px] text-[#8c867a] pr-1 pt-0.5 flex items-center justify-end cursor-help transition-colors hover:text-[#3d3b37]"
@@ -740,11 +848,10 @@ const formattedCreatedAt = computed(() => {
 				</div>
 			</div>
 
-			<!-- Footer con carrusel enmascarado y botones de acción fijos -->
+			<!-- Footer -->
 			<div
 				class="pt-3 border-t border-[#2a2926]/10 flex items-center justify-between gap-2 overflow-hidden"
 			>
-				<!-- Contenedor del carrusel con máscara de desvanecido a la derecha -->
 				<div class="relative flex-1 min-w-0">
 					<div
 						class="flex items-center gap-1 overflow-x-auto scrollbar-none py-1 pr-4 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)]"
@@ -776,7 +883,6 @@ const formattedCreatedAt = computed(() => {
 							<Type class="w-4 h-4" />
 						</button>
 
-						<!-- Selector de Color -->
 						<div class="relative shrink-0">
 							<button
 								type="button"
@@ -792,7 +898,6 @@ const formattedCreatedAt = computed(() => {
 								<Palette class="w-4 h-4" />
 							</button>
 
-							<!-- Popover de Colores -->
 							<div
 								v-if="showColorPicker"
 								class="absolute bottom-full left-0 mb-2 p-2 bg-[#f2eee3] border border-[#d8d3c5] rounded-xl shadow-lg flex items-center gap-1.5 z-50"
@@ -817,7 +922,7 @@ const formattedCreatedAt = computed(() => {
 						<button
 							v-if="!isChecklist"
 							@click="showTranslateModal = true"
-							:disabled="!content.trim() || notesStore.aiLoading"
+							:disabled="!content.trim() || isAiBusy"
 							class="p-1.5 rounded-md hover:bg-[#2a2926]/10 text-[#8c867a] hover:text-[#3d3b37] transition-colors disabled:opacity-40 flex items-center gap-1 shrink-0"
 							title="Traducir nota"
 						>
@@ -826,7 +931,7 @@ const formattedCreatedAt = computed(() => {
 
 						<AiMenuDropdown
 							v-if="!isChecklist"
-							:is-loading="notesStore.aiLoading"
+							:is-loading="isAiBusy"
 							:disabled="!content.trim()"
 							class="shrink-0"
 							@expand="handleExpandText"
@@ -839,7 +944,6 @@ const formattedCreatedAt = computed(() => {
 							class="h-4 w-[1px] bg-[#2a2926]/10 mx-0.5 shrink-0"
 						></div>
 
-						<!-- Deshacer -->
 						<button
 							type="button"
 							@click="handleUndo"
@@ -850,7 +954,6 @@ const formattedCreatedAt = computed(() => {
 							<Undo2 class="w-4 h-4" />
 						</button>
 
-						<!-- Rehacer -->
 						<button
 							type="button"
 							@click="handleRedo"
@@ -863,7 +966,6 @@ const formattedCreatedAt = computed(() => {
 					</div>
 				</div>
 
-				<!-- Botones de Acción Fijos (Derecha) -->
 				<div class="flex items-center gap-2 shrink-0 pl-1">
 					<button
 						@click="handleClose"
@@ -885,7 +987,7 @@ const formattedCreatedAt = computed(() => {
 		<TagManagerModal
 			:is-open="showTagModal"
 			:tags="tags"
-			:is-loading-ai="notesStore.aiLoading"
+			:is-loading-ai="isAiBusy"
 			@close="showTagModal = false"
 			@add-tag="handleAddTag"
 			@remove-tag="handleRemoveTag"
@@ -900,7 +1002,7 @@ const formattedCreatedAt = computed(() => {
 
 		<TranslationModal
 			:is-open="showTranslateModal"
-			:is-loading="notesStore.aiLoading"
+			:is-loading="isAiBusy"
 			@close="showTranslateModal = false"
 			@translate="handleTranslateLanguage"
 		/>

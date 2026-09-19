@@ -4,6 +4,7 @@ import { computed, ref } from "vue";
 import Navbar from "./components/layout/Navbar.vue";
 import Sidebar from "./components/layout/Sidebar.vue";
 import { useRoute } from "vue-router";
+import ToastContainer from "./components/ui/ToastContainer.vue";
 
 const route = useRoute();
 // Cambiado a false por defecto para móvil
@@ -38,4 +39,5 @@ const isPublicPage = computed(() => !!route.meta.hideLayout);
 			</main>
 		</div>
 	</div>
+	<ToastContainer />
 </template>

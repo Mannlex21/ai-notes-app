@@ -39,14 +39,18 @@ export const useAiStore = defineStore("ai", () => {
 		text: string,
 	): Promise<{ tags: string[]; color?: string }> => {
 		if (!text.trim()) return { tags: [] };
-		if (configStore.isLimitReached) return { tags: [] };
+		if (configStore.isLimitReached) {
+			error.value = "Límite diario alcanzado";
+			throw new Error("Límite diario de peticiones de IA alcanzado");
+		}
 
 		aiLoading.value = true;
 		error.value = null;
 
 		try {
 			const canProceed = await checkAndConsumePrompt();
-			if (!canProceed) return { tags: [] };
+			if (!canProceed)
+				throw new Error("No fue posible consumir la petición de IA");
 
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
@@ -73,9 +77,11 @@ export const useAiStore = defineStore("ai", () => {
 				tags: data.tags || [],
 				color: data.color || "#f7f4ea",
 			};
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al generar etiquetas sugeridas:", err);
-			return { tags: [] };
+			error.value =
+				err?.message || "Error al generar etiquetas sugeridas";
+			throw err;
 		} finally {
 			aiLoading.value = false;
 		}
@@ -84,14 +90,18 @@ export const useAiStore = defineStore("ai", () => {
 	// FEAT 2: Generación / Expansión de Texto
 	const expandText = async (promptText: string): Promise<string> => {
 		if (!promptText.trim()) return "";
-		if (configStore.isLimitReached) return promptText;
+		if (configStore.isLimitReached) {
+			error.value = "Límite diario alcanzado";
+			throw new Error("Límite diario de peticiones de IA alcanzado");
+		}
 
 		aiLoading.value = true;
 		error.value = null;
 
 		try {
 			const canProceed = await checkAndConsumePrompt();
-			if (!canProceed) return promptText;
+			if (!canProceed)
+				throw new Error("No fue posible consumir la petición de IA");
 
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
@@ -108,9 +118,10 @@ export const useAiStore = defineStore("ai", () => {
 				!generatedText.startsWith(",");
 
 			return `${promptText}${needsSpace ? " " : ""}${generatedText}`;
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al expandir borrador:", err);
-			return promptText;
+			error.value = err?.message || "Error al expandir borrador";
+			throw err;
 		} finally {
 			aiLoading.value = false;
 		}
@@ -122,7 +133,10 @@ export const useAiStore = defineStore("ai", () => {
 		tone: "formal" | "conciso" | "casual",
 	): Promise<string[]> => {
 		if (!currentText.trim()) return [];
-		if (configStore.isLimitReached) return [];
+		if (configStore.isLimitReached) {
+			error.value = "Límite diario alcanzado";
+			throw new Error("Límite diario de peticiones de IA alcanzado");
+		}
 
 		const tonePrompts = {
 			formal: "Reescribe el texto corrigiendo la gramática y adaptándolo a un tono profesional, claro y pulido.",
@@ -136,7 +150,8 @@ export const useAiStore = defineStore("ai", () => {
 
 		try {
 			const canProceed = await checkAndConsumePrompt();
-			if (!canProceed) return [];
+			if (!canProceed)
+				throw new Error("No fue posible consumir la petición de IA");
 
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
@@ -161,9 +176,10 @@ export const useAiStore = defineStore("ai", () => {
 
 			const data = JSON.parse(response.text || "{}");
 			return data.options || [currentText];
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al generar opciones de estilo:", err);
-			return [];
+			error.value = err?.message || "Error al generar opciones de estilo";
+			throw err;
 		} finally {
 			aiLoading.value = false;
 		}
@@ -186,21 +202,37 @@ export const useAiStore = defineStore("ai", () => {
 				FROM notes
 				WHERE user_id = ${getUserId()}
 					AND embedding IS NOT NULL
-					AND 1 - (embedding <=> ${queryVector}::vector) > 0.25
+					AND 1 - (embedding <=> ${queryVector}::vector) >= 0.50
 				ORDER BY similarity DESC
-				LIMIT 10;
+				LIMIT 5;
 			`;
 
-			const formattedRows: Note[] = rows.map((n: any) => ({
-				...n,
-				tags: n.tags || [],
-				color: n.color || "#f7f4ea",
-			}));
+			if (rows.length > 0) {
+				// Obtenemos la similitud de la nota más acertada (la primera)
+				const topScore = Number(rows[0].similarity);
 
-			notes.value = formattedRows.filter((n) => !n.is_archived);
-		} catch (err) {
+				// Conservamos solo las notas que estén dentro de un margen del 10% respecto a la mejor
+				// (Ejemplo: si la top es 0.73, mantendrá las que tengan >= 0.63)
+				const MARGIN = 0.1;
+				const filteredRows = rows.filter(
+					(n: any) => Number(n.similarity) >= topScore - MARGIN,
+				);
+
+				noteStore.notes = filteredRows
+					.map((n: any) => ({
+						...n,
+						tags: n.tags || [],
+						color: n.color || "#f7f4ea",
+					}))
+					.filter((n) => !n.is_archived);
+			} else {
+				noteStore.notes = [];
+			}
+		} catch (err: any) {
 			console.error("Error en búsqueda semántica:", err);
+			error.value = err?.message || "Error en búsqueda semántica";
 			await noteStore.fetchNotes();
+			throw err;
 		} finally {
 			loading.value = false;
 		}
@@ -219,23 +251,28 @@ export const useAiStore = defineStore("ai", () => {
 			});
 			const values = res.embeddings?.[0]?.values;
 			return values ? `[${values.join(",")}]` : null;
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al generar embedding:", err);
-			return null;
+			error.value = err?.message || "Error al generar embedding";
+			throw err;
 		}
 	};
 
 	// FEAT 5: Resumir Puntos Clave
 	const summarizeDraft = async (currentText: string): Promise<string> => {
 		if (!currentText.trim()) return "";
-		if (configStore.isLimitReached) return currentText;
+		if (configStore.isLimitReached) {
+			error.value = "Límite diario alcanzado";
+			throw new Error("Límite diario de peticiones de IA alcanzado");
+		}
 
 		aiLoading.value = true;
 		error.value = null;
 
 		try {
 			const canProceed = await checkAndConsumePrompt();
-			if (!canProceed) return currentText;
+			if (!canProceed)
+				throw new Error("No fue posible consumir la petición de IA");
 
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
@@ -251,9 +288,10 @@ Texto:
 			});
 
 			return response.text?.trim() || currentText;
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al resumir borrador:", err);
-			return currentText;
+			error.value = err?.message || "Error al resumir borrador";
+			throw err;
 		} finally {
 			aiLoading.value = false;
 		}
@@ -262,14 +300,18 @@ Texto:
 	// FEAT 6: Extraer Tareas para Checklist
 	const extractActionItems = async (text: string): Promise<string[]> => {
 		if (!text.trim()) return [];
-		if (configStore.isLimitReached) return [];
+		if (configStore.isLimitReached) {
+			error.value = "Límite diario alcanzado";
+			throw new Error("Límite diario de peticiones de IA alcanzado");
+		}
 
 		aiLoading.value = true;
 		error.value = null;
 
 		try {
 			const canProceed = await checkAndConsumePrompt();
-			if (!canProceed) return [];
+			if (!canProceed)
+				throw new Error("No fue posible consumir la petición de IA");
 
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
@@ -294,9 +336,10 @@ Texto:
 
 			const data = JSON.parse(response.text || "{}");
 			return data.tasks || [];
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al extraer tareas con IA:", err);
-			return [];
+			error.value = err?.message || "Error al extraer tareas con IA";
+			throw err;
 		} finally {
 			aiLoading.value = false;
 		}
@@ -308,14 +351,18 @@ Texto:
 		targetLanguage?: string,
 	): Promise<string> => {
 		if (!text.trim()) return "";
-		if (configStore.isLimitReached) return text;
+		if (configStore.isLimitReached) {
+			error.value = "Límite diario alcanzado";
+			throw new Error("Límite diario de peticiones de IA alcanzado");
+		}
 
 		aiLoading.value = true;
 		error.value = null;
 
 		try {
 			const canProceed = await checkAndConsumePrompt();
-			if (!canProceed) return text;
+			if (!canProceed)
+				throw new Error("No fue posible consumir la petición de IA");
 
 			const prompt = targetLanguage
 				? `Traduce el siguiente texto al idioma ${targetLanguage}. Devuelve ÚNICAMENTE la traducción, sin notas ni explicaciones:\n\n"${text}"`
@@ -330,9 +377,10 @@ Texto:
 			});
 
 			return response.text?.trim() || text;
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al traducir texto con IA:", err);
-			return text;
+			error.value = err?.message || "Error al traducir texto con IA";
+			throw err;
 		} finally {
 			aiLoading.value = false;
 		}
@@ -341,14 +389,18 @@ Texto:
 	// FEAT 8: Auto-Título Inteligente
 	const generateTitle = async (content: string): Promise<string> => {
 		if (!content.trim()) return "";
-		if (configStore.isLimitReached) return "";
+		if (configStore.isLimitReached) {
+			error.value = "Límite diario alcanzado";
+			throw new Error("Límite diario de peticiones de IA alcanzado");
+		}
 
 		aiLoading.value = true;
 		error.value = null;
 
 		try {
 			const canProceed = await checkAndConsumePrompt();
-			if (!canProceed) return "";
+			if (!canProceed)
+				throw new Error("No fue posible consumir la petición de IA");
 
 			const response = await ai.models.generateContent({
 				model: GEMINI_MODEL,
@@ -359,9 +411,10 @@ Texto:
 			});
 
 			return response.text?.trim() || "";
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al generar título con IA:", err);
-			return "";
+			error.value = err?.message || "Error al generar título con IA";
+			throw err;
 		} finally {
 			aiLoading.value = false;
 		}

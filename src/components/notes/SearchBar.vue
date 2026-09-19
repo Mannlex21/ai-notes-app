@@ -1,29 +1,31 @@
+<!-- components/layout/SearchBar.vue -->
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Search, Sparkles, Loader2, X } from "lucide-vue-next";
 import { useNotesStore } from "../../stores/useNotesStore";
 import { useAiStore } from "../../stores/useAiStore";
+import { useToastStore } from "../../stores/useToastStore";
+import { getErrorMessage } from "../../utils/getErrorMessage";
 
 const route = useRoute();
 const router = useRouter();
 const notesStore = useNotesStore();
 const aiStore = useAiStore();
+const toast = useToastStore();
 
 const searchQuery = ref("");
 const isAiMode = ref(false);
 
 let debounceTimer: ReturnType<typeof setTimeout>;
 
-// Redirigir a las notas si el usuario interactúa con la búsqueda fuera de la página principal
 const ensureNotesRoute = () => {
 	if (route.path !== "/") {
 		router.push("/");
 	}
 };
 
-// Ejecutar búsqueda según el modo activo
-const executeSearch = () => {
+const executeSearch = async () => {
 	ensureNotesRoute();
 	clearTimeout(debounceTimer);
 
@@ -33,16 +35,24 @@ const executeSearch = () => {
 	}
 
 	if (isAiMode.value) {
-		// Modo IA: Búsqueda Semántica en Neon pgvector
-		notesStore.searchQuery = ""; // Limpiar filtro manual
-		aiStore.searchNotesSemantics(searchQuery.value);
+		notesStore.searchQuery = "";
+		try {
+			await aiStore.searchNotesSemantics(searchQuery.value);
+		} catch (err) {
+			toast.error(
+				"Error en la búsqueda semántica",
+				getErrorMessage(
+					err,
+					"No se pudo conectar con el servicio de IA. Intenta nuevamente.",
+				),
+			);
+		}
 	} else {
-		// Modo Manual: Actualizar el query en el store para el filtro computado
 		notesStore.searchQuery = searchQuery.value;
+		await notesStore.searchNotes(searchQuery.value);
 	}
 };
 
-// Búsqueda mientras escribe (Debounce)
 const handleInput = () => {
 	ensureNotesRoute();
 	clearTimeout(debounceTimer);
@@ -57,7 +67,6 @@ const handleInput = () => {
 	}, 350);
 };
 
-// Limpiar la búsqueda y restaurar TODAS las notas
 const clearSearch = () => {
 	clearTimeout(debounceTimer);
 	searchQuery.value = "";
@@ -65,7 +74,6 @@ const clearSearch = () => {
 	notesStore.fetchNotes();
 };
 
-// Alternar entre modo Manual e IA
 const toggleAiMode = () => {
 	ensureNotesRoute();
 	isAiMode.value = !isAiMode.value;
@@ -75,18 +83,17 @@ const toggleAiMode = () => {
 
 <template>
 	<div class="relative flex items-center w-full max-w-md">
-		<!-- Icono Búsqueda -->
 		<Search
 			class="w-4 h-4 text-[#8c867a] absolute left-3 pointer-events-none"
 		/>
 
-		<!-- Input Principal -->
 		<input
 			v-model="searchQuery"
 			@focus="ensureNotesRoute"
 			@click="ensureNotesRoute"
 			@input="handleInput"
 			@keydown.enter.prevent="executeSearch"
+			@keydown.esc="clearSearch"
 			type="text"
 			:placeholder="
 				isAiMode ? 'Búsqueda semántica con IA...' : 'Buscar notas...'
@@ -99,10 +106,9 @@ const toggleAiMode = () => {
 			]"
 		/>
 
-		<!-- Controles -->
 		<div class="absolute right-2 flex items-center gap-1">
 			<Loader2
-				v-if="notesStore.loading"
+				v-if="notesStore.loading || aiStore.aiLoading"
 				class="w-3.5 h-3.5 text-[#e06c53] animate-spin"
 			/>
 

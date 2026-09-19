@@ -1,3 +1,4 @@
+<!-- components/notes/NoteCard.vue -->
 <script setup lang="ts">
 import { computed } from "vue";
 import {
@@ -12,6 +13,8 @@ import {
 import { useNotesStore } from "../../stores/useNotesStore";
 import type { Note } from "../../types";
 import { useAiStore } from "../../stores/useAiStore";
+import { useToastStore } from "../../stores/useToastStore";
+import { getErrorMessage } from "../../utils/getErrorMessage";
 
 const props = defineProps<{ note: Note }>();
 
@@ -24,8 +27,8 @@ const emit = defineEmits<{
 
 const notesStore = useNotesStore();
 const aiStore = useAiStore();
+const toast = useToastStore();
 
-// Parsea las líneas con sintaxis [ ] o [x]
 const checklistItems = computed(() => {
 	if (!props.note.content) return [];
 	const lines = props.note.content
@@ -44,21 +47,77 @@ const checklistItems = computed(() => {
 
 const isChecklist = computed(() => checklistItems.value.length > 0);
 
-const handleAutoTag = async () => {
-	if (!props.note.content && !props.note.title) return;
-
-	const fullText = `${props.note.title || ""} ${props.note.content || ""}`;
-	const result = await aiStore.suggestTagsForText(fullText);
-
-	if (result.tags || result.color) {
-		await notesStore.updateNote(props.note.id, {
-			title: props.note.title,
-			content: props.note.content,
-			tags: Array.from(
-				new Set([...(props.note.tags || []), ...(result.tags || [])]),
+const handleTogglePin = async () => {
+	try {
+		await notesStore.togglePin(props.note.id);
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"No se pudo cambiar el estado de fijado en el servidor.",
 			),
-			color: result.color || props.note.color,
-		});
+		);
+	}
+};
+
+const handleToggleArchive = async () => {
+	try {
+		await notesStore.toggleArchiveNote(props.note.id);
+		if (props.note.is_archived) {
+			toast.success("Nota desarchivada");
+		} else {
+			toast.info("Nota movida al archivo");
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"No se pudo guardar el nuevo estado de archivo.",
+			),
+		);
+	}
+};
+
+const handleDelete = () => {
+	emit("delete", props.note.id);
+};
+
+const handleAutoTag = async () => {
+	if (!props.note.content && !props.note.title) {
+		toast.warning("La nota no contiene texto para categorizar");
+		return;
+	}
+
+	try {
+		const fullText = `${props.note.title || ""} ${props.note.content || ""}`;
+		const result = await aiStore.suggestTagsForText(fullText);
+
+		if ((result.tags && result.tags.length > 0) || result.color) {
+			await notesStore.updateNote(props.note.id, {
+				title: props.note.title,
+				content: props.note.content,
+				tags: Array.from(
+					new Set([
+						...(props.note.tags || []),
+						...(result.tags || []),
+					]),
+				),
+				color: result.color || props.note.color,
+			});
+			toast.success("Categorías y estilo generados con IA");
+		} else {
+			toast.info("No se encontraron nuevas categorías para esta nota");
+		}
+	} catch (err) {
+		toast.error(
+			"Error en la búsqueda semántica",
+			getErrorMessage(
+				err,
+				"No fue posible procesar las sugerencias de etiquetas y color con IA.",
+			),
+		);
 	}
 };
 </script>
@@ -71,7 +130,7 @@ const handleAutoTag = async () => {
 	>
 		<!-- Botón Fijar (Pin) -->
 		<button
-			@click.stop="notesStore.togglePin(note.id)"
+			@click.stop="handleTogglePin"
 			class="absolute top-3 right-3 p-1.5 rounded-lg text-[#8c867a] hover:text-[#2a2926] hover:bg-[#2a2926]/10 transition-colors"
 			:class="{ 'text-[#e06c53] fill-[#e06c53]': note.is_pinned }"
 			:title="note.is_pinned ? 'Desfijar nota' : 'Fijar nota'"
@@ -85,7 +144,6 @@ const handleAutoTag = async () => {
 				{{ note.title || "Sin título" }}
 			</h3>
 
-			<!-- Renderizado de Checklist -->
 			<div
 				v-if="isChecklist"
 				class="space-y-1.5 text-xs text-[#59554d] line-clamp-6"
@@ -112,7 +170,6 @@ const handleAutoTag = async () => {
 				</div>
 			</div>
 
-			<!-- Renderizado de Texto Enriquecido Normal -->
 			<div
 				v-else
 				class="text-xs text-[#59554d] leading-relaxed line-clamp-4 prose prose-sm max-w-none"
@@ -138,10 +195,9 @@ const handleAutoTag = async () => {
 		<div
 			class="mt-3 pt-2 border-t border-[#2a2926]/10 flex items-center justify-between text-xs text-[#8c867a]"
 		>
-			<!-- Acciones con IA -->
 			<button
 				@click.stop="handleAutoTag"
-				:disabled="notesStore.aiLoading"
+				:disabled="notesStore.isLoading || aiStore.aiLoading"
 				class="flex items-center gap-1 text-[11px] hover:text-[#e06c53] transition-colors disabled:opacity-50"
 				title="Generar etiquetas y color con IA"
 			>
@@ -149,13 +205,11 @@ const handleAutoTag = async () => {
 				<span>Categorizar</span>
 			</button>
 
-			<!-- Controles CRUD / Estado -->
 			<div
 				class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity"
 			>
-				<!-- Archivar / Desarchivar -->
 				<button
-					@click.stop="notesStore.toggleArchiveNote(note.id)"
+					@click.stop="handleToggleArchive"
 					class="p-1 hover:text-[#2a2926] hover:bg-[#2a2926]/10 rounded transition-colors"
 					:title="note.is_archived ? 'Desarchivar' : 'Archivar'"
 				>
@@ -166,9 +220,8 @@ const handleAutoTag = async () => {
 					<Archive v-else class="w-3.5 h-3.5" />
 				</button>
 
-				<!-- Eliminar -->
 				<button
-					@click.stop="emit('delete', note.id)"
+					@click.stop="handleDelete"
 					class="p-1 hover:text-[#c94a29] hover:bg-[#c94a29]/10 rounded transition-colors"
 					title="Eliminar nota"
 				>
