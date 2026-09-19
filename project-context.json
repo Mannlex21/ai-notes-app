@@ -1,0 +1,142 @@
+{
+	"project": {
+		"name": "ai-notes-app",
+		"title": "Notes App + AI Assist",
+		"description": "Aplicación web moderna y minimalista para la gestión de notas, listas de tareas (checklists) y edición enriquecida con Tiptap, potenciada por IA Assist mediante Google Gemini SDK y persistencia en la nube con Neon DB (PostgreSQL).",
+		"repository_status": "Monorepo / Single Project",
+		"live_demo": "https://ai-notes-app-wine-six.vercel.app/"
+	},
+	"tech_stack": {
+		"frontend": {
+			"framework": "Vue 3 (Composition API, `<script setup lang=\"ts\">`)",
+			"language": "TypeScript 6.0",
+			"build_tool": "Vite 8.3",
+			"routing": "Vue Router 4.6",
+			"styling": "Tailwind CSS v4",
+			"icons": "Lucide Vue Next",
+			"editor": "Tiptap (v3.31 - Starter Kit, Vue 3 integration, ProseMirror)"
+		},
+		"state_management": {
+			"library": "Pinia 4.0",
+			"stores": [
+				"useAiStore.ts (Manejo de estado de operaciones de IA)",
+				"useAuthStore.ts (Gestión de sesiones y autenticación)",
+				"useNotesStore.ts (Estado global, CRUD de notas)",
+				"useUserConfigStore.ts (Configuración de usuario y preferencias)"
+			]
+		},
+		"database_and_persistence": {
+			"database": "Neon DB (PostgreSQL Serverless)",
+			"driver": "@neondatabase/serverless (Conexión directa vía HTTP/WebSockets sin ORM)",
+			"orm_status": "Sin ORM (Consultas SQL directas / raw driver)"
+		},
+		"ai_integration": {
+			"provider": "Google Gemini AI",
+			"sdk": "@google/genai (^2.22.0)",
+			"model": "Gemini 1.5 Flash",
+			"features": [
+				"Continuar borrador",
+				"Resumir puntos clave",
+				"Extraer tareas (Checklist)",
+				"Sugerir variantes de estilo (Formal, Conciso, Casual)",
+				"Traducción de contenido"
+			]
+		},
+		"security_and_auth": {
+			"hashing": "bcryptjs (^3.0.3)"
+		}
+	},
+	"domain_models": {
+		"User": {
+			"id": "string",
+			"email": "string",
+			"full_name": "string (opcional)",
+			"avatar_url": "string (opcional)",
+			"created_at": "string"
+		},
+		"UserSettings": {
+			"user_id": "string",
+			"theme": "'dark' | 'light'",
+			"default_view": "'grid' | 'list'",
+			"ai_provider": "'gemini' | 'openai'",
+			"daily_prompt_limit": "number",
+			"ai_temperature": "number",
+			"auto_tagging": "boolean"
+		},
+		"Note": {
+			"id": "string",
+			"user_id": "string",
+			"title": "string",
+			"content": "string",
+			"summary": "string (opcional)",
+			"tags": "string[]",
+			"color": "string",
+			"is_pinned": "boolean",
+			"is_archived": "boolean",
+			"created_at": "string",
+			"updated_at": "string"
+		},
+		"AIUsageLog": {
+			"id": "string",
+			"user_id": "string",
+			"action_type": "'summarize' | 'generate' | 'auto_tag' | 'expand'",
+			"prompt_tokens": "number (opcional)",
+			"created_at": "string"
+		}
+	},
+	"architecture_and_components": {
+		"modals_and_ui": {
+			"AiMenuDropdown": "Menú contextual de acciones de IA con renderizado desacoplado mediante `<Teleport to=\"body\">` y posicionamiento dinámico `getBoundingClientRect` para evitar recortes de `overflow`/`mask-image` en dispositivos móviles.",
+			"AiVariantsModal": "Modal de vista previa y comparación para revisar propuestas de IA antes de aplicarlas a la nota.",
+			"NoteModal": "Modal híbrido para la edición de notas enriquecidas y checklists interactivas.",
+			"TagManagerModal": "Modal de gestión y organización de etiquetas.",
+			"TranslationModal": "Modal para acciones de traducción con asistencia de IA."
+		},
+		"directory_tree": {
+			"src": {
+				"files": ["App.vue", "main.ts", "style.css"],
+				"assets": ["hero.png", "vite.svg", "vue.svg"],
+				"components": {
+					"layout": ["Navbar.vue", "Sidebar.vue"],
+					"modals": [
+						"AiMenuDropdown.vue",
+						"AiVariantsModal.vue",
+						"TagManagerModal.vue",
+						"TranslationModal.vue"
+					],
+					"notes": [
+						"NoteCard.vue",
+						"NoteInput.vue",
+						"NoteModal.vue",
+						"RichTextEditor.vue",
+						"SearchBar.vue"
+					],
+					"ui": []
+				},
+				"lib": ["gemini.ts", "neon.ts"],
+				"router": ["index.ts"],
+				"stores": [
+					"useAiStore.ts",
+					"useAuthStore.ts",
+					"useNotesStore.ts",
+					"useUserConfigStore.ts"
+				],
+				"types": ["index.ts"],
+				"views": [
+					"ArchiveView.vue",
+					"LandingView.vue",
+					"LoginView.vue",
+					"NotesView.vue",
+					"RegisterView.vue",
+					"SettingsView.vue"
+				]
+			}
+		}
+	},
+	"key_features": [
+		"Creación y edición de notas enriquecidas con Tiptap Editor y checklists interactivas.",
+		"Transformaciones inteligentes de texto en tiempo real con Gemini AI.",
+		"Persistencia de datos relacional y escalable en la nube con Neon DB.",
+		"Interfaz fluida y totalmente responsiva optimizada para móvil y escritorio."
+	]
+}
