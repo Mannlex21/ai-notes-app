@@ -1,6 +1,5 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
-import { sql } from "../lib/neon";
 import { useAuthStore } from "./useAuthStore";
 import type { Note } from "../types";
 import { useAiStore } from "./useAiStore";
@@ -19,9 +18,6 @@ export const useNotesStore = defineStore("notes", () => {
 	const configStore = useUserConfigStore();
 	const getUserId = () => authStore.user?.id;
 
-	// ----------------------------------------------------
-	// OPERACIONES CRUD EXISTENTES
-	// ----------------------------------------------------
 	const fetchNotes = async () => {
 		const userId = getUserId();
 		if (!userId) return;
@@ -30,31 +26,22 @@ export const useNotesStore = defineStore("notes", () => {
 		error.value = null;
 
 		try {
-			const rows = await sql`
-			SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at
-			FROM notes
-			WHERE user_id = ${userId}
-			ORDER BY is_pinned DESC, created_at DESC;
-		`;
+			const res = await fetch(`/api/notes?userId=${userId}`);
+			const data = await res.json();
 
-			// Normalizamos el formato de cada nota al obtenerlas de PostgreSQL
-			const formattedRows: Note[] = rows.map((n: any) => ({
-				...n,
-				tags: n.tags || [],
-				color: n.color || "#f7f4ea",
-				is_pinned: Boolean(n.is_pinned),
-				is_archived: Boolean(n.is_archived),
-			}));
+			if (!res.ok) throw new Error(data.error);
 
+			const formattedRows: Note[] = data.notes;
 			notes.value = formattedRows.filter((n) => !n.is_archived);
 			archivedNotes.value = formattedRows.filter((n) => n.is_archived);
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al obtener notas:", err);
 			error.value = "No se pudieron cargar las notas.";
 		} finally {
 			loading.value = false;
 		}
 	};
+
 	const searchNotes = async (query: string) => {
 		const userId = getUserId();
 		if (!userId) return;
@@ -67,36 +54,15 @@ export const useNotesStore = defineStore("notes", () => {
 		error.value = null;
 
 		try {
-			// Usamos ILIKE para búsqueda insensible a mayúsculas/minúsculas
-			// Opcional: %${query}% para buscar en título o contenido
-			const searchTerm = `%${query.trim()}%`;
+			const res = await fetch(
+				`/api/notes?userId=${userId}&q=${encodeURIComponent(query)}`,
+			);
+			const data = await res.json();
 
-			const rows = await sql`
-			SELECT id, user_id, title, content, summary, tags, color, is_pinned, is_archived, created_at, updated_at
-			FROM notes
-			WHERE user_id = ${userId}
-			  AND is_archived = false
-			  AND (
-				title ILIKE ${searchTerm}
-				OR content ILIKE ${searchTerm}
-				OR EXISTS (
-					SELECT 1 FROM unnest(tags) tag 
-					WHERE tag ILIKE ${searchTerm}
-				)
-			  )
-			ORDER BY is_pinned DESC, created_at DESC;
-		`;
+			if (!res.ok) throw new Error(data.error);
 
-			const formattedRows: Note[] = rows.map((n: any) => ({
-				...n,
-				tags: n.tags || [],
-				color: n.color || "#f7f4ea",
-				is_pinned: Boolean(n.is_pinned),
-				is_archived: Boolean(n.is_archived),
-			}));
-
-			notes.value = formattedRows;
-		} catch (err) {
+			notes.value = data.notes;
+		} catch (err: any) {
 			console.error("Error al buscar notas:", err);
 			error.value =
 				"No se pudieron obtener los resultados de la búsqueda.";
@@ -104,6 +70,7 @@ export const useNotesStore = defineStore("notes", () => {
 			loading.value = false;
 		}
 	};
+
 	const addNote = async (payload: {
 		title: string;
 		content: string;
@@ -116,49 +83,39 @@ export const useNotesStore = defineStore("notes", () => {
 
 		let finalTags = payload.tags ? [...payload.tags] : [];
 		const noteColor = payload.color || "#f2eee3";
+
 		if (finalTags.length === 0 && configStore.autoTagging) {
 			const fullText =
 				`${payload.title || ""} ${payload.content || ""}`.trim();
 			if (fullText) {
-				const result = await aiStore.suggestTagsForText(fullText);
-				finalTags = result.tags;
+				try {
+					const result = await aiStore.suggestTagsForText(fullText);
+					finalTags = result.tags;
+				} catch (e) {
+					console.warn("No se generaron auto-etiquetas:", e);
+				}
 			}
 		}
 
 		try {
-			const vector = await aiStore.getEmbeddingVector(
-				`${payload.title || ""} ${payload.content || ""}`,
-			);
+			const res = await fetch("/api/notes", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					userId,
+					title: payload.title || "",
+					content: payload.content || "",
+					tags: finalTags,
+					color: noteColor,
+					is_pinned: payload.is_pinned || false,
+				}),
+			});
 
-			const [inserted] = await sql`
-			INSERT INTO notes (user_id, title, content, tags, color, is_pinned, embedding)
-			VALUES (
-				${userId}, 
-				${payload.title || ""}, 
-				${payload.content || ""}, 
-				${finalTags}, 
-				${noteColor}, 
-				${payload.is_pinned || false},
-				${vector}::vector
-			)
-			RETURNING id, created_at, updated_at;
-		`;
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error);
 
-			const newNote: Note = {
-				id: inserted.id,
-				user_id: userId,
-				title: payload.title || "",
-				content: payload.content || "",
-				tags: finalTags,
-				color: noteColor,
-				is_pinned: payload.is_pinned || false,
-				is_archived: false,
-				created_at: inserted.created_at,
-				updated_at: inserted.updated_at,
-			};
-
-			notes.value.unshift(newNote);
-		} catch (err) {
+			notes.value.unshift(data.note);
+		} catch (err: any) {
 			console.error("Error al agregar nota:", err);
 			error.value = "Error al crear la nota.";
 		}
@@ -179,20 +136,19 @@ export const useNotesStore = defineStore("notes", () => {
 		const noteColor = payload.color || "#f2eee3";
 
 		try {
-			const vector = await aiStore.getEmbeddingVector(
-				`${payload.title || ""} ${payload.content || ""}`,
-			);
+			const res = await fetch(`/api/notes/${id}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					userId,
+					title: payload.title,
+					content: payload.content,
+					tags: payload.tags || [],
+					color: noteColor,
+				}),
+			});
 
-			await sql`
-			UPDATE notes
-			SET title = ${payload.title}, 
-				content = ${payload.content}, 
-				tags = ${payload.tags || []},
-				color = ${noteColor}, 
-				embedding = ${vector}::vector,
-				updated_at = NOW()
-			WHERE id = ${id} AND user_id = ${userId};
-		`;
+			if (!res.ok) throw new Error("Error al modificar la nota");
 
 			const note =
 				notes.value.find((n) => n.id === id) ||
@@ -205,7 +161,7 @@ export const useNotesStore = defineStore("notes", () => {
 				note.color = noteColor;
 				note.updated_at = new Date().toISOString();
 			}
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al actualizar nota:", err);
 			error.value = "Error al modificar la nota.";
 		}
@@ -227,10 +183,16 @@ export const useNotesStore = defineStore("notes", () => {
 				(a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0),
 			);
 
-			await sql`
-				UPDATE notes SET is_pinned = ${newState}, updated_at = NOW()
-				WHERE id = ${id} AND user_id = ${userId};
-			`;
+			const res = await fetch(`/api/notes/${id}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					userId,
+					is_pinned: newState,
+				}),
+			});
+
+			if (!res.ok) throw new Error("Error al actualizar pin");
 		} catch (err) {
 			console.error("Error al cambiar pin:", err);
 			note.is_pinned = previousState;
@@ -246,18 +208,21 @@ export const useNotesStore = defineStore("notes", () => {
 
 		try {
 			if (isCurrentlyActive) {
-				// Mover de Activas -> Archivadas
 				const [archivedNote] = notes.value.splice(noteIndexInActive, 1);
 				archivedNote.is_archived = true;
 				archivedNote.is_pinned = false;
 				archivedNotes.value.unshift(archivedNote);
 
-				await sql`
-				UPDATE notes SET is_archived = TRUE, is_pinned = FALSE, updated_at = NOW()
-				WHERE id = ${id} AND user_id = ${userId};
-			`;
+				await fetch(`/api/notes/${id}`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						userId,
+						is_archived: true,
+						is_pinned: false,
+					}),
+				});
 			} else {
-				// Mover de Archivadas -> Activas
 				const noteIndexInArchived = archivedNotes.value.findIndex(
 					(n) => n.id === id,
 				);
@@ -269,10 +234,14 @@ export const useNotesStore = defineStore("notes", () => {
 					restoredNote.is_archived = false;
 					notes.value.unshift(restoredNote);
 
-					await sql`
-					UPDATE notes SET is_archived = FALSE, updated_at = NOW()
-					WHERE id = ${id} AND user_id = ${userId};
-				`;
+					await fetch(`/api/notes/${id}`, {
+						method: "PUT",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							userId,
+							is_archived: false,
+						}),
+					});
 				}
 			}
 		} catch (err) {
@@ -291,7 +260,11 @@ export const useNotesStore = defineStore("notes", () => {
 				(n) => n.id !== id,
 			);
 
-			await sql`DELETE FROM notes WHERE id = ${id} AND user_id = ${userId};`;
+			const res = await fetch(`/api/notes/${id}?userId=${userId}`, {
+				method: "DELETE",
+			});
+
+			if (!res.ok) throw new Error("Error al eliminar nota");
 		} catch (err) {
 			console.error("Error al eliminar nota:", err);
 			error.value = "No se pudo eliminar la nota.";

@@ -1,7 +1,6 @@
 <!-- SettingsView.vue -->
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { sql } from "../lib/neon";
 import {
 	User,
 	Sparkles,
@@ -13,7 +12,6 @@ import {
 } from "lucide-vue-next";
 import { useAuthStore } from "../stores/useAuthStore";
 import { useUserConfigStore } from "../stores/useUserConfigStore";
-import { GEMINI_MODEL } from "../lib/gemini";
 
 const authStore = useAuthStore();
 const configStore = useUserConfigStore();
@@ -38,12 +36,17 @@ const handleSaveSettings = async () => {
 	successMessage.value = "";
 
 	try {
-		// Actualizar nombre completo del usuario
-		await sql`
-      UPDATE users 
-      SET full_name = ${fullName.value}, updated_at = NOW()
-      WHERE id = ${authStore.user.id};
-    `;
+		// Actualizar nombre completo en la API
+		const res = await fetch("/api/settings/user", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				userId: authStore.user.id,
+				fullName: fullName.value,
+			}),
+		});
+
+		if (!res.ok) throw new Error("Error al actualizar perfil");
 
 		// Actualizar nombre en AuthStore local
 		authStore.setUser({
@@ -195,7 +198,7 @@ const handleSaveSettings = async () => {
 								class="w-full bg-[#e8e3d5] border border-[#d8d3c5] rounded-lg px-3 py-2 text-xs text-[#3d3b37] font-medium opacity-100 cursor-not-allowed"
 							>
 								<option value="gemini">
-									{{ GEMINI_MODEL }}
+									<!-- {{ GEMINI_MODEL }} -->
 								</option>
 							</select>
 						</div>

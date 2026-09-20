@@ -226,7 +226,6 @@
 					],
 					"ui": ["ToastContainer.vue", "ToastItem.vue"]
 				},
-				"lib": ["gemini.ts", "neon.ts"],
 				"router": ["index.ts"],
 				"stores": [
 					"useAiStore.ts",
@@ -245,6 +244,22 @@
 					"RegisterView.vue",
 					"SettingsView.vue"
 				]
+			},
+			"api": {
+				"ai": [
+					"expand-text.ts",
+					"extract-tasks.ts",
+					"generate-title.ts",
+					"refine-style.ts",
+					"search-semantic.ts",
+					"suggest-tags.ts",
+					"summarize.ts",
+					"translate.ts"
+				],
+				"auth": ["login.ts", "register.ts"],
+				"notes": ["index.ts", "[id].ts"],
+				"settings": ["increment-prompt.ts", "user.ts"],
+				"_lib": ["gemini.ts", "neon.ts"]
 			}
 		}
 	},

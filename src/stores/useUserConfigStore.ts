@@ -1,7 +1,6 @@
 // stores/useUserConfigStore.ts
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { sql } from "../lib/neon";
 import { useAuthStore } from "./useAuthStore";
 
 export type ViewMode = "grid" | "list";
@@ -20,7 +19,6 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 	const authStore = useAuthStore();
 	const getUserId = () => authStore.user?.id;
 
-	// Prompts restantes asegurando conversión numérica estricta
 	const remainingPrompts = computed(() => {
 		const limit = Number(dailyPromptLimit.value) || 0;
 		const used = Number(promptsUsedToday.value) || 0;
@@ -28,14 +26,12 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 		return remaining > 0 ? remaining : 0;
 	});
 
-	// Verificar si se alcanzó el límite diario
 	const isLimitReached = computed(() => {
 		const limit = Number(dailyPromptLimit.value) || 0;
 		const used = Number(promptsUsedToday.value) || 0;
 		return used >= limit;
 	});
 
-	// Cargar configuración de usuario
 	const fetchUserConfig = async () => {
 		const userId = getUserId();
 		if (!userId) return;
@@ -44,54 +40,23 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 		error.value = null;
 
 		try {
-			const rows = await sql`
-      SELECT default_view, ai_provider, daily_prompt_limit, ai_temperature, auto_tagging, prompts_used_today, last_prompt_date
-      FROM user_settings
-      WHERE user_id = ${userId}
-      LIMIT 1;
-    `;
+			const res = await fetch(`/api/settings/user?userId=${userId}`);
+			const data = await res.json();
 
-			if (rows.length > 0) {
-				const config = rows[0];
-				if (config.default_view)
-					currentView.value = config.default_view as ViewMode;
-				if (config.ai_provider) aiProvider.value = config.ai_provider;
-				if (config.daily_prompt_limit !== undefined)
-					dailyPromptLimit.value = Number(config.daily_prompt_limit);
-				if (config.ai_temperature !== undefined)
-					aiTemperature.value = Number(config.ai_temperature);
-				if (config.auto_tagging !== undefined)
-					autoTagging.value = Boolean(config.auto_tagging);
+			if (!res.ok) throw new Error(data.error);
 
-				// Resetear contador si el último prompt fue en un día anterior
-				const todayStr = new Date().toISOString().split("T")[0];
-				const lastDateStr = config.last_prompt_date
-					? new Date(config.last_prompt_date)
-							.toISOString()
-							.split("T")[0]
-					: null;
-
-				if (lastDateStr && lastDateStr !== todayStr) {
-					promptsUsedToday.value = 0;
-					await sql`
-          UPDATE user_settings 
-          SET prompts_used_today = 0, last_prompt_date = CURRENT_DATE, updated_at = NOW()
-          WHERE user_id = ${userId};
-        `;
-				} else {
-					promptsUsedToday.value = Number(
-						config.prompts_used_today || 0,
-					);
-				}
-			} else {
-				// Si el usuario no tiene registro en user_settings, lo creamos
-				await sql`
-        INSERT INTO user_settings (user_id, default_view, ai_provider, daily_prompt_limit, prompts_used_today, last_prompt_date)
-        VALUES (${userId}, 'grid', 'gemini', 20, 0, CURRENT_DATE)
-        ON CONFLICT (user_id) DO NOTHING;
-      `;
-			}
-		} catch (err) {
+			const config = data.config;
+			if (config.default_view)
+				currentView.value = config.default_view as ViewMode;
+			if (config.ai_provider) aiProvider.value = config.ai_provider;
+			if (config.daily_prompt_limit !== undefined)
+				dailyPromptLimit.value = Number(config.daily_prompt_limit);
+			if (config.ai_temperature !== undefined)
+				aiTemperature.value = Number(config.ai_temperature);
+			if (config.auto_tagging !== undefined)
+				autoTagging.value = Boolean(config.auto_tagging);
+			promptsUsedToday.value = Number(config.prompts_used_today || 0);
+		} catch (err: any) {
 			console.error("Error al obtener la configuración:", err);
 			error.value = "No se pudo cargar la configuración de usuario.";
 		} finally {
@@ -99,27 +64,20 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 		}
 	};
 
-	// Incrementar contador de uso de IA
 	const incrementPromptUsage = async (): Promise<boolean> => {
 		const userId = getUserId();
-		if (!userId) return false;
-
-		if (isLimitReached.value) {
-			return false;
-		}
+		if (!userId || isLimitReached.value) return false;
 
 		try {
 			promptsUsedToday.value = Number(promptsUsedToday.value) + 1;
 
-			await sql`
-      INSERT INTO user_settings (user_id, prompts_used_today, last_prompt_date, updated_at)
-      VALUES (${userId}, 1, CURRENT_DATE, NOW())
-      ON CONFLICT (user_id) 
-      DO UPDATE SET 
-        prompts_used_today = user_settings.prompts_used_today + 1,
-        last_prompt_date = CURRENT_DATE,
-        updated_at = NOW();
-    `;
+			const res = await fetch("/api/settings/increment-prompt", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ userId }),
+			});
+
+			if (!res.ok) throw new Error("Error en servidor");
 			return true;
 		} catch (err) {
 			console.error("Error incrementando uso de prompts:", err);
@@ -130,9 +88,7 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 			return false;
 		}
 	};
-	// En stores/useUserConfigStore.ts
 
-	// Guardar los ajustes modificables por el usuario (temperatura y auto-tagging)
 	const saveAiSettings = async (
 		temperature: number,
 		autoTag: boolean,
@@ -146,23 +102,19 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 			aiTemperature.value = Number(temperature);
 			autoTagging.value = Boolean(autoTag);
 
-			await sql`
-      INSERT INTO user_settings (user_id, ai_temperature, auto_tagging, updated_at)
-      VALUES (
-        ${userId}, 
-        ${aiTemperature.value}, 
-        ${autoTagging.value}, 
-        NOW()
-      )
-      ON CONFLICT (user_id) 
-      DO UPDATE SET 
-        ai_temperature = EXCLUDED.ai_temperature,
-        auto_tagging = EXCLUDED.auto_tagging,
-        updated_at = NOW();
-    `;
+			const res = await fetch("/api/settings/user", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					userId,
+					aiTemperature: aiTemperature.value,
+					autoTagging: autoTagging.value,
+				}),
+			});
 
+			if (!res.ok) throw new Error("Error guardando ajustes de IA");
 			return true;
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error al guardar la configuración de IA:", err);
 			error.value = "No se pudieron guardar las preferencias.";
 			return false;
@@ -170,6 +122,7 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 			loading.value = false;
 		}
 	};
+
 	const toggleView = async () => {
 		const userId = getUserId();
 		if (!userId) return;
@@ -178,24 +131,26 @@ export const useUserConfigStore = defineStore("userConfig", () => {
 			currentView.value === "grid" ? "list" : "grid";
 		const previousView = currentView.value;
 
-		// Actualización optimista en la UI
 		currentView.value = nextView;
 
 		try {
-			await sql`
-				INSERT INTO user_settings (user_id, default_view, updated_at)
-				VALUES (${userId}, ${nextView}, NOW())
-				ON CONFLICT (user_id) 
-				DO UPDATE SET 
-					default_view = ${nextView},
-					updated_at = NOW();
-			`;
+			const res = await fetch("/api/settings/user", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					userId,
+					defaultView: nextView,
+				}),
+			});
+
+			if (!res.ok) throw new Error("Error al guardar vista");
 		} catch (err) {
-			console.error("Error al actualizar la vista en Neon:", err);
-			currentView.value = previousView; // Revertir si falla
+			console.error("Error al actualizar la vista:", err);
+			currentView.value = previousView;
 			error.value = "No se pudo guardar la preferencia de vista.";
 		}
 	};
+
 	return {
 		currentView,
 		aiProvider,
