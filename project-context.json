@@ -106,6 +106,7 @@
 			"database": "Neon DB (PostgreSQL Serverless)",
 			"driver": "@neondatabase/serverless (Conexión directa vía HTTP/WebSockets sin ORM)",
 			"orm_status": "Sin ORM (Consultas SQL directas / raw driver)",
+			"access_layer": "Solo desde funciones serverless en api/ (api/_lib/neon.ts). El frontend nunca importa el driver; usa fetch('/api/...')",
 			"extensions": [
 				"pgvector (para almacenamiento y consulta de embeddings de 768 dimensiones)"
 			]
@@ -126,6 +127,77 @@
 		},
 		"security_and_auth": {
 			"hashing": "bcryptjs (^3.0.3)"
+		}
+	},
+	"backend_and_deployment": {
+		"platform": "Vercel (plan Hobby)",
+		"serverless_functions": {
+			"location": "api/ en la raíz del proyecto, fuera de src/ (Vercel solo despliega como funciones lo que está en /api de la raíz)",
+			"hobby_plan_limit": "Máximo 12 funciones por deployment. Cada archivo en api/ cuenta como una función, sin importar cuántos métodos HTTP exporte (GET/POST/etc.). Las carpetas con prefijo _ (como _lib) no cuentan.",
+			"current_functions": [
+				"api/ai/[action].ts (una sola función que enruta las 8 acciones de IA)",
+				"api/auth/login.ts",
+				"api/auth/register.ts",
+				"api/notes/index.ts",
+				"api/notes/[id].ts",
+				"api/settings/increment-prompt.ts",
+				"api/settings/user.ts"
+			],
+			"current_count": 7
+		},
+		"ai_routing": {
+			"entrypoint": "api/ai/[action].ts (exporta POST; toma la acción del último segmento de la URL)",
+			"registry": "api/_lib/ai/index.ts (mapa acción -> handler POST)",
+			"handlers_location": "api/_lib/ai/*.ts (cada uno exporta POST; ya no son funciones serverless independientes)",
+			"urls": "Sin cambios para el frontend: /api/ai/summarize, /api/ai/translate, /api/ai/search-semantic, etc.",
+			"actions": [
+				"expand-text",
+				"extract-tasks",
+				"generate-title",
+				"refine-style",
+				"search-semantic",
+				"suggest-tags",
+				"summarize",
+				"translate"
+			],
+			"unknown_action": "Responde 404 con { error: 'Acción no encontrada' }"
+		},
+		"client_server_boundary": {
+			"rule": "src/ nunca importa nada de api/. El frontend solo se comunica con el servidor por HTTP (fetch('/api/...')).",
+			"reason": "Vite empaqueta en el bundle del navegador cualquier archivo importado desde src/, aunque viva en api/. Importar neon.ts en el cliente rompe (process is not defined) o expone las credenciales de la base de datos.",
+			"check_command": "grep -rn \"api/\" src"
+		},
+		"environment_variables": {
+			"server_only": ["NEON_DATABASE_URL", "GEMINI_API_KEY"],
+			"rule": "Los secretos nunca llevan prefijo VITE_ (Vite expone al cliente todo lo que empieza con VITE_). Se leen con process.env solo dentro de api/.",
+			"local_file": ".env.local (generado con vercel env pull; incluye VERCEL_OIDC_TOKEN, que se regenera solo)",
+			"production": "Definir NEON_DATABASE_URL y GEMINI_API_KEY en Project Settings de Vercel para Production, Preview y Development"
+		},
+		"neon_client": {
+			"file": "api/_lib/neon.ts",
+			"pattern": "Instancia perezosa (getSqlInstance): la validación de NEON_DATABASE_URL y la conexión ocurren en la primera consulta, no al importar el módulo.",
+			"types": "Incluye /// <reference types=\"node\" /> para que la compilación de Vercel reconozca process"
+		},
+		"typescript": {
+			"configs": {
+				"tsconfig.json": "Solo references a tsconfig.app.json, tsconfig.node.json y tsconfig.api.json (sin compilerOptions)",
+				"tsconfig.app.json": "Frontend (src/), moduleResolution bundler",
+				"tsconfig.node.json": "vite.config.ts",
+				"tsconfig.api.json": "Funciones de api/ con module y moduleResolution nodenext, para reproducir el comportamiento del runtime de Node ESM"
+			},
+			"esm_imports": "Los imports relativos dentro de api/ llevan extensión .js aunque el archivo sea .ts (ej. '../_lib/neon.js'). Los imports a carpetas usan la ruta completa (.../index.js).",
+			"vercel_note": "Vercel compila las funciones con su propia configuración (no lee tsconfig.api.json) y exige las extensiones .js.",
+			"check_command": "npx tsc -p tsconfig.api.json"
+		},
+		"local_development": {
+			"command": "npm run dev:api",
+			"script": "dotenv -e .env.local -- vercel dev --listen 3000",
+			"reason": "vercel dev no entregaba a las funciones las variables del .env.local. Cargarlas con dotenv-cli antes de lanzar vercel dev lo resuelve (alternativa: definir $env:NEON_DATABASE_URL en PowerShell).",
+			"notes": [
+				"npm run dev (solo Vite) no sirve las funciones de /api.",
+				"Reiniciar vercel dev por completo si cambian las variables de entorno.",
+				"Si vercel.json tiene un rewrite SPA hacia /index.html, debe excluir /api, las rutas de Vite (@, node_modules) y los archivos con extensión; si no, Vite recibe index.html y falla con 'Failed to parse source for import analysis'."
+			]
 		}
 	},
 	"domain_models": {
@@ -247,19 +319,24 @@
 			},
 			"api": {
 				"ai": [
-					"expand-text.ts",
-					"extract-tasks.ts",
-					"generate-title.ts",
-					"refine-style.ts",
-					"search-semantic.ts",
-					"suggest-tags.ts",
-					"summarize.ts",
-					"translate.ts"
+					"[action].ts (única función de IA; enruta por acción a los handlers de _lib/ai)"
 				],
 				"auth": ["login.ts", "register.ts"],
 				"notes": ["index.ts", "[id].ts"],
 				"settings": ["increment-prompt.ts", "user.ts"],
-				"_lib": ["gemini.ts", "neon.ts"]
+				"_lib": [
+					"gemini.ts",
+					"neon.ts",
+					"ai/index.ts (registro acción -> handler)",
+					"ai/expand-text.ts",
+					"ai/extract-tasks.ts",
+					"ai/generate-title.ts",
+					"ai/refine-style.ts",
+					"ai/search-semantic.ts",
+					"ai/suggest-tags.ts",
+					"ai/summarize.ts",
+					"ai/translate.ts"
+				]
 			}
 		}
 	},
