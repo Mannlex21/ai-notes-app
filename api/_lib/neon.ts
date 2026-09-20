@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 let sqlInstance: NeonQueryFunction<false, false> | null = null;
