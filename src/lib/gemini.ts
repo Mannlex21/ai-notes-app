@@ -1,10 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const apiKey = import.meta.env.GEMINI_API_KEY;
 
 if (!apiKey) {
 	console.warn(
-		"VITE_GEMINI_API_KEY no está configurada en las variables de entorno.",
+		"GEMINI_API_KEY no está configurada en las variables de entorno.",
 	);
 }
 
