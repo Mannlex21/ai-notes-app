@@ -1,5 +1,5 @@
 // api/ai/translate.ts
-import { ai, GEMINI_MODEL } from "../_lib/gemini.js";
+import { ai, GEMINI_MODEL } from "../gemini.js";
 
 interface TranslatePayload {
 	text?: string;

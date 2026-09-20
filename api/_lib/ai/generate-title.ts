@@ -1,5 +1,5 @@
 // api/ai/generate-title.ts
-import { ai, GEMINI_MODEL } from "../_lib/gemini.js";
+import { ai, GEMINI_MODEL } from "../gemini.js";
 
 interface GenerateTitlePayload {
 	content?: string;
