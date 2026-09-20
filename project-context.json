@@ -114,8 +114,8 @@
 		"ai_integration": {
 			"provider": "Google Gemini AI",
 			"sdk": "@google/genai (^2.22.0)",
-			"model": "Gemini 1.5 Flash",
-			"embedding_model": "text-embedding-004",
+			"model": "gemini-3.6-flash",
+			"embedding_model": "gemini-embedding-001",
 			"features": [
 				"Continuar borrador",
 				"Resumir puntos clave",
