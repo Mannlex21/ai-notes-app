@@ -1,8 +1,15 @@
+// api/ai/extract-tasks.ts
 import { ai, GEMINI_MODEL } from "../_lib/gemini";
+
+interface ExtractTasksPayload {
+	text?: string;
+	temperature?: number;
+}
 
 export async function POST(request: Request) {
 	try {
-		const { text, temperature } = await request.json();
+		const body = (await request.json()) as ExtractTasksPayload;
+		const { text = "", temperature } = body;
 
 		const response = await ai.models.generateContent({
 			model: GEMINI_MODEL,

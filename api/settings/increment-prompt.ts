@@ -1,9 +1,13 @@
-// api/settings/increment-prompt.ts
 import { sql } from "../_lib/neon";
+
+interface IncrementPromptPayload {
+	userId?: string;
+}
 
 export async function POST(request: Request) {
 	try {
-		const { userId } = await request.json();
+		const body = (await request.json()) as IncrementPromptPayload;
+		const { userId } = body;
 
 		if (!userId) {
 			return Response.json(

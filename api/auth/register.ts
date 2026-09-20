@@ -1,10 +1,12 @@
 // api/auth/register.ts
 import bcrypt from "bcryptjs";
 import { sql } from "../_lib/neon";
+import type { AuthRegisterPayload } from "../../src/types";
 
 export async function POST(request: Request) {
 	try {
-		const { fullName, email, password } = await request.json();
+		const body = (await request.json()) as AuthRegisterPayload;
+		const { full_name: fullName, email, password } = body;
 
 		if (!fullName || !email || !password) {
 			return Response.json(

@@ -1,8 +1,15 @@
+// api/ai/summarize.ts
 import { ai, GEMINI_MODEL } from "../_lib/gemini";
+
+interface SummarizePayload {
+	currentText?: string;
+	temperature?: number;
+}
 
 export async function POST(request: Request) {
 	try {
-		const { currentText, temperature } = await request.json();
+		const body = (await request.json()) as SummarizePayload;
+		const { currentText = "", temperature } = body;
 
 		const response = await ai.models.generateContent({
 			model: GEMINI_MODEL,

@@ -1,11 +1,23 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
-const dbUrl = process.env.NEON_DATABASE_URL;
+let sqlInstance: NeonQueryFunction<false, false> | null = null;
 
-if (!dbUrl) {
-	throw new Error(
-		"NEON_DATABASE_URL no está configurada en las variables de entorno.",
-	);
+function getSqlInstance() {
+	if (!sqlInstance) {
+		const dbUrl = process.env.NEON_DATABASE_URL;
+		if (!dbUrl) {
+			throw new Error(
+				"NEON_DATABASE_URL no está configurada en las variables de entorno.",
+			);
+		}
+		sqlInstance = neon(dbUrl);
+	}
+	return sqlInstance;
 }
 
-export const sql = neon(dbUrl);
+export const sql: NeonQueryFunction<false, false> = ((
+	...args: [any, ...any[]]
+) => {
+	const instance = getSqlInstance();
+	return (instance as any)(...args);
+}) as unknown as NeonQueryFunction<false, false>;

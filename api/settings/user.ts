@@ -1,5 +1,12 @@
-// api/settings/user.ts
 import { sql } from "../_lib/neon";
+
+interface UpdateUserSettingsPayload {
+	userId?: string;
+	fullName?: string;
+	aiTemperature?: number;
+	autoTagging?: boolean;
+	defaultView?: "grid" | "list";
+}
 
 export async function GET(request: Request) {
 	try {
@@ -66,8 +73,9 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
 	try {
+		const body = (await request.json()) as UpdateUserSettingsPayload;
 		const { userId, fullName, aiTemperature, autoTagging, defaultView } =
-			await request.json();
+			body;
 
 		if (!userId) {
 			return Response.json(

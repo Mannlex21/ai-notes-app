@@ -1,9 +1,23 @@
+// api/ai/search-semantic.ts
 import { ai, EMBEDDING_MODEL } from "../_lib/gemini";
 import { sql } from "../_lib/neon";
 
+interface SearchSemanticPayload {
+	query?: string;
+	userId?: string;
+}
+
 export async function POST(request: Request) {
 	try {
-		const { query, userId } = await request.json();
+		const body = (await request.json()) as SearchSemanticPayload;
+		const { query = "", userId } = body;
+
+		if (!userId) {
+			return Response.json(
+				{ error: "userId es requerido" },
+				{ status: 400 },
+			);
+		}
 
 		// Generar vector embedding de la consulta
 		const res = await ai.models.embedContent({
@@ -40,7 +54,8 @@ export async function POST(request: Request) {
 		const topScore = Number(rows[0].similarity);
 		const MARGIN = 0.1;
 		const filteredRows = rows.filter(
-			(n: any) => Number(n.similarity) >= topScore - MARGIN,
+			(n: Record<string, any>) =>
+				Number(n.similarity) >= topScore - MARGIN,
 		);
 
 		return Response.json(filteredRows);

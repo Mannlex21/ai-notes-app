@@ -1,8 +1,16 @@
+// api/ai/translate.ts
 import { ai, GEMINI_MODEL } from "../_lib/gemini";
+
+interface TranslatePayload {
+	text?: string;
+	targetLanguage?: string;
+	temperature?: number;
+}
 
 export async function POST(request: Request) {
 	try {
-		const { text, targetLanguage, temperature } = await request.json();
+		const body = (await request.json()) as TranslatePayload;
+		const { text = "", targetLanguage, temperature } = body;
 
 		const prompt = targetLanguage
 			? `Traduce el siguiente texto al idioma ${targetLanguage}. Devuelve ÚNICAMENTE la traducción, sin notas ni explicaciones:\n\n"${text}"`

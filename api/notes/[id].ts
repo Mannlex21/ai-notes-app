@@ -1,5 +1,7 @@
+// api/notes/[id].ts
 import { sql } from "../_lib/neon";
 import { getEmbedding } from "../_lib/gemini";
+import type { UpdateNotePayload } from "../../src/types";
 
 export async function PUT(
 	request: Request,
@@ -18,7 +20,7 @@ export async function PUT(
 			);
 		}
 
-		const body = await request.json();
+		const body = (await request.json()) as UpdateNotePayload;
 		const { userId, title, content, tags, color, is_pinned, is_archived } =
 			body;
 

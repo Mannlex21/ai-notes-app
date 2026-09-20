@@ -1,8 +1,15 @@
+// api/ai/generate-title.ts
 import { ai, GEMINI_MODEL } from "../_lib/gemini";
+
+interface GenerateTitlePayload {
+	content?: string;
+	temperature?: number;
+}
 
 export async function POST(request: Request) {
 	try {
-		const { content, temperature } = await request.json();
+		const body = (await request.json()) as GenerateTitlePayload;
+		const { content = "", temperature } = body;
 
 		const response = await ai.models.generateContent({
 			model: GEMINI_MODEL,

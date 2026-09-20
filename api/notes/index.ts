@@ -1,5 +1,6 @@
 import { sql } from "../_lib/neon";
 import { getEmbedding } from "../_lib/gemini";
+import type { CreateNotePayload, Note } from "../../src/types";
 
 export async function GET(request: Request) {
 	try {
@@ -42,13 +43,21 @@ export async function GET(request: Request) {
 			`;
 		}
 
-		const formattedNotes = rows.map((n: any) => ({
-			...n,
-			tags: n.tags || [],
-			color: n.color || "#f7f4ea",
-			is_pinned: Boolean(n.is_pinned),
-			is_archived: Boolean(n.is_archived),
-		}));
+		const formattedNotes = rows.map(
+			(n: Record<string, any>): Note => ({
+				id: n.id,
+				user_id: n.user_id,
+				title: n.title || "",
+				content: n.content || "",
+				summary: n.summary,
+				tags: n.tags || [],
+				color: n.color || "#f7f4ea",
+				is_pinned: Boolean(n.is_pinned),
+				is_archived: Boolean(n.is_archived),
+				created_at: n.created_at,
+				updated_at: n.updated_at,
+			}),
+		);
 
 		return Response.json({ notes: formattedNotes });
 	} catch (error: any) {
@@ -58,8 +67,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
 	try {
-		const { userId, title, content, tags, color, is_pinned } =
-			await request.json();
+		const body = (await request.json()) as CreateNotePayload & {
+			is_pinned?: boolean;
+		};
+		const { userId, title, content, tags, color, is_pinned } = body;
 
 		if (!userId) {
 			return Response.json(

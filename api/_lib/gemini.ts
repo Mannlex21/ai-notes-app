@@ -4,8 +4,8 @@ export const ai = new GoogleGenAI({
 	apiKey: process.env.GEMINI_API_KEY!,
 });
 
-export const GEMINI_MODEL = "gemini-1.5-flash";
-export const EMBEDDING_MODEL = "text-embedding-004";
+export const GEMINI_MODEL = "gemini-3.6-flash";
+export const EMBEDDING_MODEL = "gemini-embedding-001";
 
 export async function getEmbedding(text: string): Promise<number[]> {
 	if (!text || !text.trim()) return [];

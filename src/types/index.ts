@@ -39,3 +39,50 @@ export interface AIUsageLog {
 	prompt_tokens?: number;
 	created_at: string;
 }
+
+// ==========================================
+// Payload Interfaces para Endpoints de la API
+// ==========================================
+
+export interface UpdateNotePayload {
+	userId: string;
+	title?: string;
+	content?: string;
+	tags?: string[];
+	color?: string;
+	is_pinned?: boolean;
+	is_archived?: boolean;
+}
+
+export interface CreateNotePayload {
+	userId: string;
+	title: string;
+	content: string;
+	tags?: string[];
+	color?: string;
+}
+
+export interface AuthLoginPayload {
+	email: string;
+	password_hash?: string;
+	password?: string;
+}
+
+export interface AuthRegisterPayload {
+	email: string;
+	password_hash?: string;
+	password?: string;
+	full_name?: string;
+}
+
+export interface AiActionPayload {
+	userId?: string;
+	text?: string;
+	content?: string;
+	title?: string;
+	prompt?: string;
+	targetLanguage?: string;
+	style?: string;
+	temperature?: number;
+	query?: string;
+}

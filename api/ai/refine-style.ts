@@ -1,8 +1,16 @@
+// api/ai/refine-style.ts
 import { ai, GEMINI_MODEL } from "../_lib/gemini";
+
+interface RefineStylePayload {
+	currentText?: string;
+	tone?: "formal" | "conciso" | "casual" | string;
+	temperature?: number;
+}
 
 export async function POST(request: Request) {
 	try {
-		const { currentText, tone, temperature } = await request.json();
+		const body = (await request.json()) as RefineStylePayload;
+		const { currentText = "", tone, temperature } = body;
 
 		const tonePrompts = {
 			formal: "Reescribe el texto corrigiendo la gramática y adaptándolo a un tono profesional, claro y pulido.",

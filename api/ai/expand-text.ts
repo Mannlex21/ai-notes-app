@@ -1,23 +1,54 @@
-import { ai, GEMINI_MODEL } from "../_lib/gemini";
+// api/auth/register.ts
+import bcrypt from "bcryptjs";
+import { sql } from "../_lib/neon";
+import type { AuthRegisterPayload } from "../../src/types";
 
 export async function POST(request: Request) {
 	try {
-		const { promptText, temperature } = await request.json();
+		const body = (await request.json()) as AuthRegisterPayload;
+		const { full_name: fullName, email, password } = body;
 
-		const response = await ai.models.generateContent({
-			model: GEMINI_MODEL,
-			contents: `Continúa redactando de forma natural y fluida el siguiente borrador de nota sin repetir el texto original:\n\n"${promptText}"`,
-			config: { temperature },
-		});
+		if (!fullName || !email || !password) {
+			return Response.json(
+				{ error: "Todos los campos son obligatorios." },
+				{ status: 400 },
+			);
+		}
 
-		const generatedText = response.text?.trim() || "";
-		const needsSpace =
-			!promptText.endsWith(" ") &&
-			!generatedText.startsWith(" ") &&
-			!generatedText.startsWith(",");
+		const cleanEmail = email.trim().toLowerCase();
+
+		// 1. Verificar si el correo ya existe
+		const existingUser = await sql`
+			SELECT id FROM users WHERE email = ${cleanEmail} LIMIT 1;
+		`;
+
+		if (existingUser.length > 0) {
+			return Response.json(
+				{ error: "El correo electrónico ya está registrado." },
+				{ status: 400 },
+			);
+		}
+
+		// 2. Generar Hash e Insertar en la Base de Datos
+		const userId = `usr_${Date.now()}`;
+		const passwordHash = await bcrypt.hash(password, 10);
+
+		await sql`
+			INSERT INTO users (id, email, full_name, password_hash)
+			VALUES (${userId}, ${cleanEmail}, ${fullName}, ${passwordHash});
+		`;
+
+		await sql`
+			INSERT INTO user_settings (user_id)
+			VALUES (${userId});
+		`;
 
 		return Response.json({
-			expandedText: `${promptText}${needsSpace ? " " : ""}${generatedText}`,
+			user: {
+				id: userId,
+				email: cleanEmail,
+				fullName,
+			},
 		});
 	} catch (error: any) {
 		return Response.json({ error: error.message }, { status: 500 });

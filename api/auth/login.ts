@@ -1,10 +1,12 @@
 // api/auth/login.ts
 import bcrypt from "bcryptjs";
 import { sql } from "../_lib/neon";
+import type { AuthLoginPayload } from "../../src/types";
 
 export async function POST(request: Request) {
 	try {
-		const { email, password } = await request.json();
+		const body = (await request.json()) as AuthLoginPayload;
+		const { email, password } = body;
 
 		if (!email || !password) {
 			return Response.json(
