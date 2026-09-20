@@ -1,5 +1,5 @@
 // api/ai/suggest-tags.ts
-import { ai, GEMINI_MODEL } from "../_lib/gemini";
+import { ai, GEMINI_MODEL } from "../_lib/gemini.js";
 
 interface SuggestTagsPayload {
 	text?: string;

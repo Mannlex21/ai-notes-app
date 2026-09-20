@@ -1,6 +1,6 @@
-import { sql } from "../_lib/neon";
-import { getEmbedding } from "../_lib/gemini";
-import type { CreateNotePayload, Note } from "../../src/types";
+import { sql } from "../_lib/neon.js";
+import { getEmbedding } from "../_lib/gemini.js";
+import type { CreateNotePayload, Note } from "../../src/types/index.js";
 
 export async function GET(request: Request) {
 	try {

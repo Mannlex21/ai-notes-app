@@ -1,4 +1,4 @@
-import { sql } from "../_lib/neon";
+import { sql } from "../_lib/neon.js";
 
 interface UpdateUserSettingsPayload {
 	userId?: string;

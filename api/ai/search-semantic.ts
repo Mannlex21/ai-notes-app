@@ -1,6 +1,6 @@
 // api/ai/search-semantic.ts
-import { ai, EMBEDDING_MODEL } from "../_lib/gemini";
-import { sql } from "../_lib/neon";
+import { ai, EMBEDDING_MODEL } from "../_lib/gemini.js";
+import { sql } from "../_lib/neon.js";
 
 interface SearchSemanticPayload {
 	query?: string;

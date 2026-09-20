@@ -1,5 +1,5 @@
 // api/ai/extract-tasks.ts
-import { ai, GEMINI_MODEL } from "../_lib/gemini";
+import { ai, GEMINI_MODEL } from "../_lib/gemini.js";
 
 interface ExtractTasksPayload {
 	text?: string;

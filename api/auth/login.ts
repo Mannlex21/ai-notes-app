@@ -1,7 +1,7 @@
 // api/auth/login.ts
 import bcrypt from "bcryptjs";
-import { sql } from "../_lib/neon";
-import type { AuthLoginPayload } from "../../src/types";
+import { sql } from "../_lib/neon.js";
+import type { AuthLoginPayload } from "../../src/types/index.js";
 
 export async function POST(request: Request) {
 	try {

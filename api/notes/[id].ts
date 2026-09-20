@@ -1,7 +1,7 @@
 // api/notes/[id].ts
-import { sql } from "../_lib/neon";
-import { getEmbedding } from "../_lib/gemini";
-import type { UpdateNotePayload } from "../../src/types";
+import { sql } from "../_lib/neon.js";
+import { getEmbedding } from "../_lib/gemini.js";
+import type { UpdateNotePayload } from "../../src/types/index.js";
 
 export async function PUT(
 	request: Request,

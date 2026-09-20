@@ -1,7 +1,7 @@
 // api/auth/register.ts
 import bcrypt from "bcryptjs";
-import { sql } from "../_lib/neon";
-import type { AuthRegisterPayload } from "../../src/types";
+import { sql } from "../_lib/neon.js";
+import type { AuthRegisterPayload } from "../../src/types/index.js";
 
 export async function POST(request: Request) {
 	try {
